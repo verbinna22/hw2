@@ -18,6 +18,7 @@ void *__stop_custom_data;
 
 extern void *Bstring (aint* args/*void *p*/);
 extern void *Bsexp (aint* args, aint bn);
+extern void *Bsta (void *x, aint i, void *v);
 extern size_t __gc_stack_top, __gc_stack_bottom;
 }
 
@@ -511,10 +512,14 @@ void run_interpreter(bytefile *bf, FILE *f = stderr)
         throw std::logic_error("STI temporary prohibited");
         break;
 
-      case 4:
-        // compile_call env ~fname:".sta" 3 false // TODO call
+      case 4: {
         fprintf(f, "STA");  // TODO
+        uint64_t v = pop_operand();
+        uint64_t i = pop_operand();
+        uint64_t x = pop_operand();
+        Bsta(reinterpret_cast<void *>(x), static_cast<aint>(i), reinterpret_cast<void *>(v));
         break;
+      }
 
       case 5: {
         uint64_t addr = INT;
@@ -524,14 +529,13 @@ void run_interpreter(bytefile *bf, FILE *f = stderr)
       }
 
       case 6:
-        // restore sp and fp
-        // op stack is OK - check // TODO
         fprintf(f, "END"); // TODO
+        call_end();
         break;
 
       case 7:
-        // jump to end
         fprintf(f, "RET"); // TODO
+        call_end();
         break;
 
       case 8:
