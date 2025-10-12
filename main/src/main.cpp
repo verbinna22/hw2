@@ -1,5 +1,7 @@
 /* Lama SM Bytecode interpreter */
 
+extern "C" {
+#define _Noreturn [[noreturn]]
 #include <string.h>
 #include <stdio.h>
 #include <errno.h>
@@ -8,6 +10,9 @@
 
 void *__start_custom_data;
 void *__stop_custom_data;
+
+extern size_t __gc_stack_top, __gc_stack_bottom;
+}
 
 /* The unpacked representation of bytecode file */
 typedef struct

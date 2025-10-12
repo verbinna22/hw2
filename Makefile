@@ -3,15 +3,17 @@ UNAME_S := $(shell uname -s)
 
 ifeq ($(UNAME_S),Linux)
     CC=gcc
+	CXX=g++
 else ifeq ($(UNAME_S),Darwin)
     CC=clang
+	CXX=clang++
     ARCH = -arch x86_64
 endif
 
 BUILD_DIR:=build
 SRC_DIRS:=main/src
 EXCLUDES:=
-SRCS:=main/src/main.c
+SRCS:=main/src/main.cpp
 OBJS:=$(SRCS:%=$(BUILD_DIR)/%.o)
 DEPS:=$(OBJS:.o=.d)
 # INC_DIRS:=include lib
@@ -52,9 +54,9 @@ clangd: clean
 $(BUILD_DIR)/$(TARGET_EXEC): main/src/runtime $(OBJS)
 	$(CC) $(OBJS) -o $@ $(LDFLAGS)
 
-$(BUILD_DIR)/%.c.o: %.c
+$(BUILD_DIR)/%.cpp.o: %.cpp
 	mkdir -p $(dir $@)
-	$(CC) $(CPP_FLAGS) $(CFLAGS) -c $< -o $@
+	$(CXX) $(CPP_FLAGS) $(CXXFLAGS) -c $< -o $@
 
 clean:
 	-rm -r $(BUILD_DIR)
