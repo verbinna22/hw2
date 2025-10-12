@@ -23,6 +23,7 @@ INC_FLAGS:=#$(addprefix -I, $(INC_DIRS))
 CPP_FLAGS:=$(INC_FLAGS) -MMD -MP
 LDFLAGS:=$(addprefix -l, $(LIBS)) -L main/src/runtime
 CFLAGS:=-Wall -Wextra -std=c11 -pedantic
+CXXFLAGS:=-Wall -Wextra -std=c++20 -pedantic
 
 debug: CXXFLAGS += -O0 -DDEBUG -g3
 debug: LDFLAGS += -g

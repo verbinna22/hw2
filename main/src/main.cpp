@@ -1,5 +1,7 @@
 /* Lama SM Bytecode interpreter */
 
+#include <cstdint>
+#include <stdexcept>
 extern "C" {
 #define _Noreturn [[noreturn]]
 #include <string.h>
@@ -313,6 +315,459 @@ void disassemble(FILE *f, bytefile *bf)
 
     default:
       FAIL;
+    }
+
+    fprintf(f, "\n");
+  } while (1);
+stop:
+  fprintf(f, "<end>\n");
+}
+
+constexpr uint64_t OPERAND_STACK_SIZE_U = 1024 * 1024;
+constexpr uint64_t CALL_STACK_SIZE_U = 1024 * 1024;
+
+uint64_t memory_to_simulation[OPERAND_STACK_SIZE_U + CALL_STACK_SIZE_U];
+
+constexpr uint64_t *OPERAND_STACK_SIZE_BEGIN = memory_to_simulation;
+constexpr uint64_t *OPERAND_STACK_SIZE_END = memory_to_simulation + OPERAND_STACK_SIZE_U;
+constexpr uint64_t *CALL_STACK_SIZE_BEGIN = memory_to_simulation + OPERAND_STACK_SIZE_U;
+constexpr uint64_t *CALL_STACK_SIZE_END = memory_to_simulation + OPERAND_STACK_SIZE_U + CALL_STACK_SIZE_U;
+uint64_t *operand_stack_end = OPERAND_STACK_SIZE_BEGIN;
+
+uint64_t pop_operand() {
+  --operand_stack_end;
+  uint64_t result = *operand_stack_end;
+  *operand_stack_end = 0;
+  return result;
+}
+
+void push_operand(uint64_t operand) {
+  *operand_stack_end = operand;
+  ++operand_stack_end;
+}
+
+/* Disassembles the bytecode pool */
+void run_interpreter(bytefile *bf, FILE *f = stderr)
+{
+
+#define INT (ip += sizeof(int), *(int *)(ip - sizeof(int)))
+#define BYTE *ip++
+#define STRING get_string(bf, INT)
+#define FAIL failure("ERROR: invalid opcode %d-%d\n", h, l)
+
+  char *ip = bf->code_ptr;
+  char *ops[] = {"+", "-", "*", "/", "%", "<", "<=", ">", ">=", "==", "!=", "&&", "!!"};
+  char *pats[] = {"=str", "#string", "#array", "#sexp", "#ref", "#val", "#fun"};
+  char *lds[] = {"LD", "LDA", "ST"};
+  // begin simulation jump to main
+  do
+  {
+    char x = BYTE,
+         h = (x & 0xF0) >> 4,
+         l = x & 0x0F;
+
+    fprintf(f, "0x%.8x:\t", ip - bf->code_ptr - 1);
+
+    switch (h)
+    {
+    case 15:
+      goto stop; // stop execution
+
+    /* BINOP  must be valid*/
+    case 0: {
+      uint64_t result;
+      uint64_t first = pop_operand() >> 1;
+      uint64_t second = pop_operand() >> 1;
+      switch (l) {
+        case 1: result = second + first; break;
+        case 2: result = second - first; break;
+        case 3: result = int64_t(second) * int64_t(first); break;
+        case 4: result = int64_t(second) / int64_t(first); break; // TODO: divide by zero
+        case 5: result = int64_t(second) % int64_t(first); break; // TODO: divide by zero
+        case 6: result = int64_t(second) < int64_t(first); break;
+        case 7: result = int64_t(second) <= int64_t(first); break;
+        case 8: result = int64_t(second) > int64_t(first); break;
+        case 9: result = int64_t(second) >= int64_t(first); break;
+        case 10: result = (second == first); break;
+        case 11: result = (second != first); break;
+        case 12: result = (second && first); break;
+        case 13: result = (second || first); break;
+      }
+      push_operand((result << 1) + 1);
+      fprintf(f, "BINOP\t%s", ops[l - 1]); // TODO
+      break;
+    }
+
+    case 1:
+      switch (l)
+      {
+      case 0: {
+        uint64_t n = INT;
+        push_operand((n << 1) + 1);
+        fprintf(f, "CONST\t%d", n); // TODO
+        break;
+      }
+
+      case 1: {
+        uint64_t ptr = reinterpret_cast<uint64_t>(STRING);
+        // let env, call = compile_call env ~fname:".string" 1 false in
+        //         (env, mov addr l @ call) // TODO call
+        uint64_t allocated_ptr = 0;
+        push_operand(allocated_ptr);
+        fprintf(f, "STRING\t%s", ptr); // TODO
+        break;
+      }
+
+      case 2: {
+        // let s, env = env#allocate in
+        //         let env, code = compile_call env ~fname:".sexp" (n + 1) false in
+        //         (env, mov (L (box (env#hash t))) s @ code) // TODO call
+        uint64_t ptr = reinterpret_cast<uint64_t>(STRING);
+        uint64_t n = INT;
+        uint64_t allocated_value = 0;
+        push_operand(allocated_value);
+        fprintf(f, "SEXP\t%s ", ptr);  // TODO
+        fprintf(f, "%d", n);
+        break;
+      }
+
+      case 3:
+        throw std::logic_error("STI temporary prohibited");
+        fprintf(f, "STI");
+        break;
+
+      case 4:
+        // compile_call env ~fname:".sta" 3 false // TODO call
+        fprintf(f, "STA");  // TODO
+        break;
+
+      case 5: {
+        uint64_t addr = INT;
+        ip = addr + bf->code_ptr + 1;
+        fprintf(f, "JMP\t0x%.8x", addr); // TODO
+        break;
+      }
+
+      case 6:
+        // restore sp and fp
+        // op stack is OK - check // TODO
+        fprintf(f, "END"); // TODO
+        break;
+
+      case 7:
+        // jump to end
+        fprintf(f, "RET"); // TODO
+        break;
+
+      case 8:
+        pop_operand();
+        fprintf(f, "DROP");  // TODO
+        break;
+
+      case 9: {
+        uint64_t value = pop_operand();
+        push_operand(value);
+        push_operand(value);
+        fprintf(f, "DUP");  // TODO
+        break;
+      }
+
+      case 10: {
+        uint64_t first = pop_operand();
+        uint64_t second = pop_operand();
+        push_operand(first);
+        push_operand(second);
+        fprintf(f, "SWAP"); // TODO
+        break;
+      }
+
+      case 11:
+        // compile_call env ~fname:".elem" 2 false // TODO call
+        fprintf(f, "ELEM"); // TODO
+        break;
+
+      default:
+        FAIL; // TODO: another check
+      }
+      break;
+
+    case 2: {// LD
+      uint64_t variable = 0; // TODO somehow load
+      push_operand(variable);
+      fprintf(f, "%s\t", lds[h - 2]);
+      switch (l)
+      {
+      case 0:
+        fprintf(f, "G(%d)", INT);
+        break;
+      case 1:
+        fprintf(f, "L(%d)", INT);
+        break;
+      case 2:
+        fprintf(f, "A(%d)", INT);
+        break;
+      case 3:
+        fprintf(f, "C(%d)", INT);
+        break;
+      default:
+        FAIL;
+      }
+      break;
+    }
+    case 3: // LDA
+      throw std::logic_error("LDA temporary prohibited");
+      fprintf(f, "%s\t", lds[h - 2]);
+      switch (l)
+      {
+      case 0:
+        fprintf(f, "G(%d)", INT);
+        break;
+      case 1:
+        fprintf(f, "L(%d)", INT);
+        break;
+      case 2:
+        fprintf(f, "A(%d)", INT);
+        break;
+      case 3:
+        fprintf(f, "C(%d)", INT);
+        break;
+      default:
+        FAIL;
+      }
+      break;
+    case 4: {// ST
+      uint64_t value = pop_operand();
+      // TODO somehow save
+      fprintf(f, "%s\t", lds[h - 2]); // TODO
+      switch (l)
+      {
+      case 0:
+        fprintf(f, "G(%d)", INT);
+        break;
+      case 1:
+        fprintf(f, "L(%d)", INT);
+        break;
+      case 2:
+        fprintf(f, "A(%d)", INT);
+        break;
+      case 3:
+        fprintf(f, "C(%d)", INT);
+        break;
+      default:
+        FAIL;
+      }
+      break;
+    }
+
+    case 5:
+      switch (l)
+      {
+      case 0: {
+        uint64_t addr = INT;
+        uint64_t value = pop_operand();
+        if (value == 0) {
+          ip = addr + bf->code_ptr + 1;
+        }
+        fprintf(f, "CJMPz\t0x%.8x", addr); // TODO
+        break;
+      }
+
+      case 1: {
+        uint64_t addr = INT;
+        uint64_t value = pop_operand();
+        if (value != 0) {
+          ip = addr + bf->code_ptr + 1;
+        }
+        fprintf(f, "CJMPnz\t0x%.8x", addr); // TODO
+        break;
+      }
+
+      case 2: {
+        uint64_t nargs = INT;
+        uint64_t nlocals = INT;
+        // TODO: perform fcall
+        fprintf(f, "BEGIN\t%d ", nargs); // TODO
+        fprintf(f, "%d", nlocals);
+        break;
+      }
+
+      case 3: {
+        uint64_t nargs = INT;
+        uint64_t nlocals = INT;
+        // TODO: perform fcall
+        fprintf(f, "CBEGIN\t%d ", INT);
+        fprintf(f, "%d", INT);
+        break;
+      }
+
+      case 4: {
+        fprintf(f, "CLOSURE\t0x%.8x", INT); // TODO
+        {
+          int n = INT;
+          for (int i = 0; i < n; i++)
+          {
+            switch (BYTE)
+            {
+            case 0:
+              fprintf(f, "G(%d)", INT);
+              break;
+            case 1:
+              fprintf(f, "L(%d)", INT);
+              break;
+            case 2:
+              fprintf(f, "A(%d)", INT);
+              break;
+            case 3:
+              fprintf(f, "C(%d)", INT);
+              break;
+            default:
+              FAIL;
+            }
+          }
+        };
+        // let ext = if env#is_external name then E else I in
+        //         let address = M (F, ext, A, name) in
+        //         let l, env = env#allocate in
+        //         let env, push_closure_code =
+        //           List.fold_left
+        //             (fun (env, code) c ->
+        //               let cr, env = env#allocate in
+        //               (env, mov (env#loc c) cr @ code))
+        //             (env, []) closure
+        //         in
+        //         let env, call_code =
+        //           compile_call env ~fname:".closure"
+        //             (1 + List.length closure)
+        //             false
+        //         in
+        //         (env, push_closure_code @ mov address l @ call_code) // TODO call closure
+        break;
+      }
+
+      case 5: {
+        uint64_t args_number = INT;
+        fprintf(f, "CALLC\t%d", args_number);
+        // compile call // TODO
+        break;
+      }
+
+      case 6: {
+        uint64_t addr = INT;
+        uint64_t args_number = INT;
+        fprintf(f, "CALL\t0x%.8x ", addr); // TODO
+        fprintf(f, "%d", args_number);
+        // compile call // TODO
+        break;
+      }
+
+      case 7: {
+        uint64_t string_ptr = reinterpret_cast<uint64_t>(STRING);
+        uint64_t size = INT;
+        fprintf(f, "TAG\t%s ", string_ptr);
+        fprintf(f, "%d", size); // TODO
+        // TODO: calculate hash
+        // TODO: fcall
+        uint64_t value = 0;
+        push_operand(value);
+        break;
+      }
+
+      case 8: {
+        uint64_t size = INT;
+        fprintf(f, "ARRAY\t%d", size); // TODO
+        // let s, env = env#allocate in
+        //         let env, code = compile_call env ~fname:".array_patt" 2 false in
+        //         (env, [ Mov (L (box n), s) ] @ code)
+        // TODO array call
+        uint64_t value = 0;
+        push_operand(value);
+        break;
+      }
+
+      case 9: {
+        uint64_t line = INT;
+        uint64_t column = INT;
+        fprintf(f, "FAIL\t%d", line);
+        fprintf(f, "%d", column);
+        // let value, env = if value then (env#peek, env) else env#pop in
+        //         let msg_addr, env = env#string cmd#get_infile in
+        //         let value_arg_addr, env = env#allocate in
+        //         let msg_arg_addr, env = env#allocate in
+        //         let line_arg_addr, env = env#allocate in
+        //         let col_arg_addr, env = env#allocate in
+        //         let env, code =
+        //           compile_call env ~fname:".match_failure" 4 false
+        //         in
+        //         let _, env = env#pop in
+        //         ( env,
+        //           mov (L (box col)) col_arg_addr @ mov (L (box line)) line_arg_addr
+        //           @ mov msg_addr msg_arg_addr @ mov value value_arg_addr @ code
+        //         ) // TODO: perform call
+        break;
+      }
+
+      case 10:
+        fprintf(f, "LINE\t%d", INT);
+        break;
+
+      default:
+        FAIL; // TODO remove
+      }
+      break;
+
+    case 6: {
+      fprintf(f, "PATT\t%s", pats[l]);
+      // | PATT StrCmp -> compile_call env ~fname:".string_patt" 2 false
+      //       | PATT patt ->
+      //           compile_call env
+      //             ~fname:
+      //               (match patt with
+      //               | Boxed -> ".boxed_patt"
+      //               | UnBoxed -> ".unboxed_patt"
+      //               | Array -> ".array_tag_patt"
+      //               | String -> ".string_tag_patt"
+      //               | Sexp -> ".sexp_tag_patt"
+      //               | Closure -> ".closure_tag_patt"
+      //               | StrCmp ->
+      //                   failwith
+      //                     (Printf.sprintf "Unexpected pattern: StrCmp %s: %d"
+      //                        __FILE__ __LINE__))
+      //             1 false // TODO patt
+      break;
+    }
+
+    case 7:
+    { // TODO
+      switch (l)
+      {
+      case 0:
+        fprintf(f, "CALL\tLread");
+        break;
+
+      case 1:
+        fprintf(f, "CALL\tLwrite");
+        break;
+
+      case 2:
+        fprintf(f, "CALL\tLlength");
+        break;
+
+      case 3:
+        fprintf(f, "CALL\tLstring");
+        break;
+
+      case 4:
+        fprintf(f, "CALL\tBarray\t%d", INT);
+        break;
+
+      default:
+        FAIL; // TODO
+      }
+    }
+    break;
+
+    default:
+      FAIL; // TODO
     }
 
     fprintf(f, "\n");
