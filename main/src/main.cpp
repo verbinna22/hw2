@@ -375,6 +375,7 @@ void run_interpreter(bytefile *bf, FILE *f = stderr)
 
     /* BINOP  must be valid*/
     case 0: {
+      fprintf(f, "BINOP\t%s", ops[l - 1]); // TODO
       uint64_t result;
       uint64_t first = pop_operand() >> 1;
       uint64_t second = pop_operand() >> 1;
@@ -394,7 +395,6 @@ void run_interpreter(bytefile *bf, FILE *f = stderr)
         case 13: result = (second || first); break;
       }
       push_operand((result << 1) + 1);
-      fprintf(f, "BINOP\t%s", ops[l - 1]); // TODO
       break;
     }
 
@@ -403,18 +403,19 @@ void run_interpreter(bytefile *bf, FILE *f = stderr)
       {
       case 0: {
         uint64_t n = INT;
-        push_operand((n << 1) + 1);
         fprintf(f, "CONST\t%d", n); // TODO
+        
+        push_operand((n << 1) + 1);
         break;
       }
 
       case 1: {
         uint64_t ptr = reinterpret_cast<uint64_t>(STRING);
+        fprintf(f, "STRING\t%s", ptr); // TODO
         // let env, call = compile_call env ~fname:".string" 1 false in
         //         (env, mov addr l @ call) // TODO call
         uint64_t allocated_ptr = 0;
         push_operand(allocated_ptr);
-        fprintf(f, "STRING\t%s", ptr); // TODO
         break;
       }
 
@@ -424,10 +425,10 @@ void run_interpreter(bytefile *bf, FILE *f = stderr)
         //         (env, mov (L (box (env#hash t))) s @ code) // TODO call
         uint64_t ptr = reinterpret_cast<uint64_t>(STRING);
         uint64_t n = INT;
-        uint64_t allocated_value = 0;
-        push_operand(allocated_value);
         fprintf(f, "SEXP\t%s ", ptr);  // TODO
         fprintf(f, "%d", n);
+        uint64_t allocated_value = 0;
+        push_operand(allocated_value);
         break;
       }
 
@@ -443,8 +444,8 @@ void run_interpreter(bytefile *bf, FILE *f = stderr)
 
       case 5: {
         uint64_t addr = INT;
-        ip = addr + bf->code_ptr + 1;
         fprintf(f, "JMP\t0x%.8x", addr); // TODO
+        ip = addr + bf->code_ptr + 1;
         break;
       }
 
@@ -460,24 +461,24 @@ void run_interpreter(bytefile *bf, FILE *f = stderr)
         break;
 
       case 8:
-        pop_operand();
         fprintf(f, "DROP");  // TODO
+        pop_operand();
         break;
 
       case 9: {
+        fprintf(f, "DUP");  // TODO
         uint64_t value = pop_operand();
         push_operand(value);
         push_operand(value);
-        fprintf(f, "DUP");  // TODO
         break;
       }
 
       case 10: {
+        fprintf(f, "SWAP"); // TODO
         uint64_t first = pop_operand();
         uint64_t second = pop_operand();
         push_operand(first);
         push_operand(second);
-        fprintf(f, "SWAP"); // TODO
         break;
       }
 
@@ -492,8 +493,6 @@ void run_interpreter(bytefile *bf, FILE *f = stderr)
       break;
 
     case 2: {// LD
-      uint64_t variable = 0; // TODO somehow load
-      push_operand(variable);
       fprintf(f, "%s\t", lds[h - 2]);
       switch (l)
       {
@@ -512,6 +511,8 @@ void run_interpreter(bytefile *bf, FILE *f = stderr)
       default:
         FAIL;
       }
+      uint64_t variable = 0; // TODO somehow load
+      push_operand(variable);
       break;
     }
     case 3: // LDA
@@ -536,7 +537,6 @@ void run_interpreter(bytefile *bf, FILE *f = stderr)
       }
       break;
     case 4: {// ST
-      uint64_t value = pop_operand();
       // TODO somehow save
       fprintf(f, "%s\t", lds[h - 2]); // TODO
       switch (l)
@@ -556,6 +556,7 @@ void run_interpreter(bytefile *bf, FILE *f = stderr)
       default:
         FAIL;
       }
+      uint64_t value = pop_operand();
       break;
     }
 
@@ -564,21 +565,21 @@ void run_interpreter(bytefile *bf, FILE *f = stderr)
       {
       case 0: {
         uint64_t addr = INT;
+        fprintf(f, "CJMPz\t0x%.8x", addr); // TODO
         uint64_t value = pop_operand();
         if (value == 0) {
           ip = addr + bf->code_ptr + 1;
         }
-        fprintf(f, "CJMPz\t0x%.8x", addr); // TODO
         break;
       }
 
       case 1: {
         uint64_t addr = INT;
+        fprintf(f, "CJMPnz\t0x%.8x", addr); // TODO
         uint64_t value = pop_operand();
         if (value != 0) {
           ip = addr + bf->code_ptr + 1;
         }
-        fprintf(f, "CJMPnz\t0x%.8x", addr); // TODO
         break;
       }
 
