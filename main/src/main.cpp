@@ -333,6 +333,12 @@ constexpr uint64_t *OPERAND_STACK_SIZE_END = memory_to_simulation + OPERAND_STAC
 constexpr uint64_t *CALL_STACK_SIZE_BEGIN = memory_to_simulation + OPERAND_STACK_SIZE_U;
 constexpr uint64_t *CALL_STACK_SIZE_END = memory_to_simulation + OPERAND_STACK_SIZE_U + CALL_STACK_SIZE_U;
 uint64_t *operand_stack_end = OPERAND_STACK_SIZE_BEGIN;
+uint64_t *fp = OPERAND_STACK_SIZE_BEGIN;
+uint64_t *sp = OPERAND_STACK_SIZE_BEGIN;
+
+uint64_t get_global(uint64_t i) {
+  return CALL_STACK_SIZE_BEGIN[i];
+}
 
 uint64_t pop_operand() {
   --operand_stack_end;
@@ -344,6 +350,36 @@ uint64_t pop_operand() {
 void push_operand(uint64_t operand) {
   *operand_stack_end = operand;
   ++operand_stack_end;
+}
+
+void call_begin(uint64_t nargs, char *next) {
+  for (int i = 0; i < nargs; ++i) {
+    sp[i] = pop_operand();
+  }
+  sp[nargs] = reinterpret_cast<uint64_t>(next);
+  sp[nargs + 1] = reinterpret_cast<uint64_t>(sp);
+  sp[nargs + 2] = reinterpret_cast<uint64_t>(fp);
+  fp = &sp[nargs];
+  sp += (nargs + 3);
+}
+
+uint64_t get_local(uint64_t i) {
+  return *(sp - i - 1);
+}
+
+uint64_t get_arg(uint64_t i) {
+  return *(fp - i - 1);
+}
+
+char *call_end() {
+  char *result = reinterpret_cast<char *>(fp[0]);
+  uint64_t *need_sp = reinterpret_cast<uint64_t *>(fp[1]);
+  fp = reinterpret_cast<uint64_t *>(fp[2]);
+  while (sp > need_sp) {
+    --sp;
+    *sp = 0;
+  }
+  return result;
 }
 
 /* Disassembles the bytecode pool */
@@ -414,7 +450,6 @@ void run_interpreter(bytefile *bf, FILE *f = stderr)
       case 0: {
         uint64_t n = INT;
         fprintf(f, "CONST\t%d", n); // TODO
-        
         push_operand((n << 1) + 1);
         break;
       }
