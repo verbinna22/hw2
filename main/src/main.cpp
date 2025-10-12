@@ -1,6 +1,9 @@
 /* Lama SM Bytecode interpreter */
 
+#include "runtime/runtime_common.h"
+#include <algorithm>
 #include <cstdint>
+#include <cstring>
 #include <stdexcept>
 extern "C" {
 #define _Noreturn [[noreturn]]
@@ -13,6 +16,8 @@ extern "C" {
 void *__start_custom_data;
 void *__stop_custom_data;
 
+extern void *Bstring (aint* args/*void *p*/);
+extern void *Bsexp (aint* args, aint bn);
 extern size_t __gc_stack_top, __gc_stack_bottom;
 }
 
@@ -371,6 +376,23 @@ uint64_t get_arg(uint64_t i) {
   return *(fp - i - 1);
 }
 
+char *chars = "_abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789'";
+
+uint64_t hash_tag(char *tag) {
+  // method hash tag =
+  //     let h = Stdlib.ref 0 in
+  //     for i = 0 to min (String.length tag - 1) 9 do
+  //       h := (!h lsl 6) lor String.index chars tag.[i]
+  //     done;
+  uint64_t h = 0;
+  uint64_t length = std::min<uint64_t>(std::strlen(tag), 10);
+  for (int i = 0; i < length; ++i) {
+    uint64_t index = std::strchr(chars, tag[i]) - chars;
+    h = (h << 6) | index;
+  }
+  return h;
+}
+
 char *call_end() {
   char *result = reinterpret_cast<char *>(fp[0]);
   uint64_t *need_sp = reinterpret_cast<uint64_t *>(fp[1]);
@@ -380,6 +402,14 @@ char *call_end() {
     *sp = 0;
   }
   return result;
+}
+
+uint64_t make_boxed(uint64_t n) {
+  return (n << 1) + 1;
+}
+
+uint64_t make_unboxed(uint64_t n) {
+  return n >> 1;
 }
 
 /* Disassembles the bytecode pool */
@@ -457,29 +487,28 @@ void run_interpreter(bytefile *bf, FILE *f = stderr)
       case 1: {
         uint64_t ptr = reinterpret_cast<uint64_t>(STRING);
         fprintf(f, "STRING\t%s", ptr); // TODO
-        // let env, call = compile_call env ~fname:".string" 1 false in
-        //         (env, mov addr l @ call) // TODO call
-        uint64_t allocated_ptr = 0;
+        uint64_t allocated_ptr = reinterpret_cast<uint64_t>(Bstring(reinterpret_cast<aint *>(ptr)));
         push_operand(allocated_ptr);
         break;
       }
 
       case 2: {
-        // let s, env = env#allocate in
-        //         let env, code = compile_call env ~fname:".sexp" (n + 1) false in
-        //         (env, mov (L (box (env#hash t))) s @ code) // TODO call
         uint64_t ptr = reinterpret_cast<uint64_t>(STRING);
         uint64_t n = INT;
         fprintf(f, "SEXP\t%s ", ptr);  // TODO
         fprintf(f, "%d", n);
-        uint64_t allocated_value = 0;
+        aint tmp_array[n + 1];
+        tmp_array[n] = hash_tag(reinterpret_cast<char *>(ptr));
+        for (int i = n - 1; i >= 0; --i) {
+          tmp_array[i] = pop_operand();
+        }
+        uint64_t allocated_value = reinterpret_cast<uint64_t>(Bsexp(tmp_array, static_cast<aint>(make_boxed(n + 1))));
         push_operand(allocated_value);
         break;
       }
 
       case 3:
         throw std::logic_error("STI temporary prohibited");
-        fprintf(f, "STI");
         break;
 
       case 4:
