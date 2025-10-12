@@ -383,8 +383,18 @@ void run_interpreter(bytefile *bf, FILE *f = stderr)
         case 1: result = second + first; break;
         case 2: result = second - first; break;
         case 3: result = int64_t(second) * int64_t(first); break;
-        case 4: result = int64_t(second) / int64_t(first); break; // TODO: divide by zero
-        case 5: result = int64_t(second) % int64_t(first); break; // TODO: divide by zero
+        case 4:
+          if (first == 0) {
+            fprintf(stderr, "Error: divide by zero");
+            return;
+          }
+          result = int64_t(second) / int64_t(first); break;
+        case 5:
+          if (first == 0) {
+            fprintf(stderr, "Error: divide by zero");
+            return;
+          }
+          result = int64_t(second) % int64_t(first); break;
         case 6: result = int64_t(second) < int64_t(first); break;
         case 7: result = int64_t(second) <= int64_t(first); break;
         case 8: result = int64_t(second) > int64_t(first); break;
