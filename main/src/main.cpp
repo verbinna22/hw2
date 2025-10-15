@@ -371,6 +371,9 @@ int *get_global(uint64_t i) {
 }
 
 uint64_t pop_operand() {
+  if (operand_stack_end == OPERAND_STACK_SIZE_BEGIN) {
+    throw std::logic_error("op stack underflow"); // TODO overflow
+  }
   --operand_stack_end;
   uint64_t result = *operand_stack_end;
   *operand_stack_end = 0;
@@ -657,24 +660,28 @@ void run_interpreter(bytefile *bf, FILE *f = stderr)
       case 0: {
         fprintf(f, "G(%d)", i);
         uint64_t value = pop_operand();
+        push_operand(value);
         *get_global(i) = value;
         break;
       }
       case 1: {
         fprintf(f, "L(%d)", i);
         uint64_t value = pop_operand();
+        push_operand(value);
         *get_local(i) = value;
         break;
       }
       case 2: {
         fprintf(f, "A(%d)", i);
         uint64_t value = pop_operand();
+        push_operand(value);
         *get_arg(i) = value;
         break;
       }
       case 3: {
         fprintf(f, "C(%d)", i);
         uint64_t value = pop_operand();
+        push_operand(value);
         *get_closure(i) = value;
         break;
       }
