@@ -91,7 +91,7 @@ bytefile *read_file(char *fname)
     failure("%s\n", strerror(errno));
   }
 
-  file = (bytefile *)malloc(sizeof(int) * 4 + (size = ftell(f)));
+  file = (bytefile *)malloc(sizeof(void *) * 4 + (size = ftell(f)));
 
   if (file == 0)
   {
