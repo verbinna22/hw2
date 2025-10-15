@@ -460,6 +460,8 @@ uint64_t make_unboxed(int64_t n) {
   return n >> 1;
 }
 
+#define debug(...) // fprintf(##__VA__ARGS__)
+
 /* Disassembles the bytecode pool */
 void run_interpreter(bytefile *bf, FILE *f = stderr)
 {
@@ -483,7 +485,7 @@ void run_interpreter(bytefile *bf, FILE *f = stderr)
          h = (x & 0xF0) >> 4,
          l = x & 0x0F;
 
-    fprintf(f, "0x%.8x:\t", ip - bf->code_ptr - 1);
+    debug(f, "0x%.8x:\t", ip - bf->code_ptr - 1);
 
     switch (h)
     {
@@ -492,24 +494,24 @@ void run_interpreter(bytefile *bf, FILE *f = stderr)
 
     /* BINOP  must be valid*/
     case 0: {
-      fprintf(f, "BINOP\t%s", ops[l - 1]); // TODO
+      debug(f, "BINOP\t%s", ops[l - 1]); // TODO
       uint64_t result;
       uint64_t first = make_unboxed(pop_operand());
       uint64_t second = make_unboxed(pop_operand());
-      // fprintf(stderr, "%li %li\n", int64_t(second), int64_t(first));
+      // debug(stderr, "%li %li\n", int64_t(second), int64_t(first));
       switch (l) {
         case 1: result = second + first; break;
         case 2: result = second - first; break;
         case 3: result = int64_t(second) * int64_t(first); break;
         case 4:
           if (first == 0) {
-            fprintf(stderr, "Error: divide by zero");
+            debug(stderr, "Error: divide by zero");
             return;
           }
           result = int64_t(second) / int64_t(first); break;
         case 5:
           if (first == 0) {
-            fprintf(stderr, "Error: divide by zero");
+            debug(stderr, "Error: divide by zero");
             return;
           }
           result = int64_t(second) % int64_t(first); break;
@@ -531,14 +533,14 @@ void run_interpreter(bytefile *bf, FILE *f = stderr)
       {
       case 0: {
         uint64_t n = INT;
-        fprintf(f, "CONST\t%d", n); // TODO
+        debug(f, "CONST\t%d", n); // TODO
         push_operand((n << 1) + 1);
         break;
       }
 
       case 1: {
         uint64_t ptr = reinterpret_cast<uint64_t>(STRING);
-        fprintf(f, "STRING\t%s", ptr); // TODO
+        debug(f, "STRING\t%s", ptr); // TODO
         uint64_t allocated_ptr = reinterpret_cast<uint64_t>(Bstring(reinterpret_cast<aint *>(ptr)));
         push_operand(allocated_ptr);
         break;
@@ -547,8 +549,8 @@ void run_interpreter(bytefile *bf, FILE *f = stderr)
       case 2: {
         uint64_t ptr = reinterpret_cast<uint64_t>(STRING);
         uint64_t n = INT;
-        fprintf(f, "SEXP\t%s ", ptr);  // TODO
-        fprintf(f, "%d", n);
+        debug(f, "SEXP\t%s ", ptr);  // TODO
+        debug(f, "%d", n);
         aint tmp_array[n + 1];
         tmp_array[n] = hash_tag(reinterpret_cast<char *>(ptr));
         for (int i = n - 1; i >= 0; --i) {
@@ -564,7 +566,7 @@ void run_interpreter(bytefile *bf, FILE *f = stderr)
         break;
 
       case 4: {
-        fprintf(f, "STA");  // TODO
+        debug(f, "STA");  // TODO
         uint64_t v = pop_operand();
         uint64_t i = pop_operand();
         uint64_t y = pop_operand();
@@ -574,28 +576,28 @@ void run_interpreter(bytefile *bf, FILE *f = stderr)
 
       case 5: {
         uint64_t addr = INT;
-        fprintf(f, "JMP\t0x%.8x", addr); // TODO
+        debug(f, "JMP\t0x%.8x", addr); // TODO
         ip = addr + bf->code_ptr;
         break;
       }
 
       case 6:
-        fprintf(f, "END"); // TODO
+        debug(f, "END"); // TODO
         call_end();
         break;
 
       case 7:
-        fprintf(f, "RET"); // TODO
+        debug(f, "RET"); // TODO
         call_end();
         break;
 
       case 8:
-        fprintf(f, "DROP");  // TODO
+        debug(f, "DROP");  // TODO
         pop_operand();
         break;
 
       case 9: {
-        fprintf(f, "DUP");  // TODO
+        debug(f, "DUP");  // TODO
         uint64_t value = pop_operand();
         push_operand(value);
         push_operand(value);
@@ -603,7 +605,7 @@ void run_interpreter(bytefile *bf, FILE *f = stderr)
       }
 
       case 10: {
-        fprintf(f, "SWAP"); // TODO
+        debug(f, "SWAP"); // TODO
         uint64_t first = pop_operand();
         uint64_t second = pop_operand();
         push_operand(first);
@@ -612,7 +614,7 @@ void run_interpreter(bytefile *bf, FILE *f = stderr)
       }
 
       case 11: {
-        fprintf(f, "ELEM"); // TODO
+        debug(f, "ELEM"); // TODO
         uint64_t i = pop_operand();
         uint64_t p = pop_operand();
         Belem(reinterpret_cast<void *>(p), static_cast<aint>(i));
@@ -625,26 +627,26 @@ void run_interpreter(bytefile *bf, FILE *f = stderr)
       break;
 
     case 2: {// LD
-      fprintf(f, "%s\t", lds[h - 2]);
+      debug(f, "%s\t", lds[h - 2]);
       uint64_t variable;
       uint64_t i = INT;
       switch (l)
       {
       case 0:
-        fprintf(f, "G(%d)", i);
+        debug(f, "G(%d)", i);
         variable = int64_t(*get_global(i));
-        // fprintf(stderr, "%li\t", variable);
+        // debug(stderr, "%li\t", variable);
         break;
       case 1:
-        fprintf(f, "L(%d)", i);
+        debug(f, "L(%d)", i);
         variable = *get_local(i);
         break;
       case 2:
-        fprintf(f, "A(%d)", i);
+        debug(f, "A(%d)", i);
         variable = *get_arg(i);
         break;
       case 3:
-        fprintf(f, "C(%d)", i);
+        debug(f, "C(%d)", i);
         variable = *get_closure(i);
         break;
       default:
@@ -656,33 +658,33 @@ void run_interpreter(bytefile *bf, FILE *f = stderr)
     case 3: // LDA
       throw std::logic_error("LDA temporary prohibited");
     case 4: {// ST
-      fprintf(f, "%s\t", lds[h - 2]); // TODO
+      debug(f, "%s\t", lds[h - 2]); // TODO
       uint64_t i = INT;
       switch (l)
       {
       case 0: {
-        fprintf(f, "G(%d)", i);
+        debug(f, "G(%d)", i);
         uint64_t value = pop_operand();
         push_operand(value);
         *get_global(i) = int32_t(value);
         break;
       }
       case 1: {
-        fprintf(f, "L(%d)", i);
+        debug(f, "L(%d)", i);
         uint64_t value = pop_operand();
         push_operand(value);
         *get_local(i) = value;
         break;
       }
       case 2: {
-        fprintf(f, "A(%d)", i);
+        debug(f, "A(%d)", i);
         uint64_t value = pop_operand();
         push_operand(value);
         *get_arg(i) = value;
         break;
       }
       case 3: {
-        fprintf(f, "C(%d)", i);
+        debug(f, "C(%d)", i);
         uint64_t value = pop_operand();
         push_operand(value);
         *get_closure(i) = value;
@@ -699,7 +701,7 @@ void run_interpreter(bytefile *bf, FILE *f = stderr)
       {
       case 0: {
         uint64_t addr = INT;
-        fprintf(f, "CJMPz\t0x%.8x", addr); // TODO
+        debug(f, "CJMPz\t0x%.8x", addr); // TODO
         uint64_t value = pop_operand();
         if (value == 0) {
           ip = addr + bf->code_ptr;
@@ -709,7 +711,7 @@ void run_interpreter(bytefile *bf, FILE *f = stderr)
 
       case 1: {
         uint64_t addr = INT;
-        fprintf(f, "CJMPnz\t0x%.8x", addr); // TODO
+        debug(f, "CJMPnz\t0x%.8x", addr); // TODO
         uint64_t value = pop_operand();
         if (value != 0) {
           ip = addr + bf->code_ptr;
@@ -720,8 +722,8 @@ void run_interpreter(bytefile *bf, FILE *f = stderr)
       case 2: {
         uint64_t nargs = INT;
         uint64_t nlocals = INT;
-        fprintf(f, "BEGIN\t%d ", nargs); // TODO
-        fprintf(f, "%d", nlocals);
+        debug(f, "BEGIN\t%d ", nargs); // TODO
+        debug(f, "%d", nlocals);
         alloc_locals(nlocals);
         break;
       }
@@ -729,15 +731,15 @@ void run_interpreter(bytefile *bf, FILE *f = stderr)
       case 3: {
         uint64_t nargs = INT;
         uint64_t nlocals = INT;
-        fprintf(f, "CBEGIN\t%d ", nargs);
-        fprintf(f, "%d", nlocals);
+        debug(f, "CBEGIN\t%d ", nargs);
+        debug(f, "%d", nlocals);
         alloc_locals(nlocals);
         break;
       }
 
       case 4: {
         uint64_t addr = INT;
-        fprintf(f, "CLOSURE\t0x%.8x", addr); // TODO
+        debug(f, "CLOSURE\t0x%.8x", addr); // TODO
           int n = INT;
           aint args[n + 1];
           {
@@ -748,25 +750,25 @@ void run_interpreter(bytefile *bf, FILE *f = stderr)
             {
             case 0: {
               uint64_t j = INT;
-              fprintf(f, "G(%d)", j);
+              debug(f, "G(%d)", j);
               args[i + 1] = int64_t(*get_global(j));
               break;
             }
             case 1: {
               uint64_t j = INT;
-              fprintf(f, "L(%d)", j);
+              debug(f, "L(%d)", j);
               args[i + 1] = *get_local(j);
               break;
             }
             case 2: {
               uint64_t j = INT;
-              fprintf(f, "A(%d)", j);
+              debug(f, "A(%d)", j);
               args[i + 1] = *get_arg(j);
               break;
             }
             case 3: {
               uint64_t j = INT;
-              fprintf(f, "C(%d)", j);
+              debug(f, "C(%d)", j);
               args[i + 1] = *get_closure(j);
               break;
             }
@@ -781,7 +783,7 @@ void run_interpreter(bytefile *bf, FILE *f = stderr)
 
       case 5: {
         uint64_t args_number = INT;
-        fprintf(f, "CALLC\t%d", args_number);
+        debug(f, "CALLC\t%d", args_number);
         call_begin(args_number, ip);
         *closure_address = pop_operand();
         ip = *closure_address + bf->code_ptr;
@@ -791,8 +793,8 @@ void run_interpreter(bytefile *bf, FILE *f = stderr)
       case 6: {
         uint64_t addr = INT;
         uint64_t args_number = INT;
-        fprintf(f, "CALL\t0x%.8x ", addr); // TODO
-        fprintf(f, "%d", args_number);
+        debug(f, "CALL\t0x%.8x ", addr); // TODO
+        debug(f, "%d", args_number);
         call_begin(args_number, ip);
         ip = addr + bf->code_ptr;
         break;
@@ -801,8 +803,8 @@ void run_interpreter(bytefile *bf, FILE *f = stderr)
       case 7: {
         uint64_t string_ptr = reinterpret_cast<uint64_t>(STRING);
         uint64_t size = INT;
-        fprintf(f, "TAG\t%s ", string_ptr);
-        fprintf(f, "%d", size); // TODO
+        debug(f, "TAG\t%s ", string_ptr);
+        debug(f, "%d", size); // TODO
         uint64_t data = pop_operand();
         uint64_t value = Btag(
           reinterpret_cast<char *>(data), hash_tag(reinterpret_cast<char *>(string_ptr)), make_boxed(size));
@@ -812,7 +814,7 @@ void run_interpreter(bytefile *bf, FILE *f = stderr)
 
       case 8: {
         uint64_t size = INT;
-        fprintf(f, "ARRAY\t%d", size); // TODO
+        debug(f, "ARRAY\t%d", size); // TODO
         uint64_t data = pop_operand();
         uint64_t value = Barray_patt(reinterpret_cast<void *>(data), make_boxed(size));
         push_operand(value);
@@ -822,8 +824,8 @@ void run_interpreter(bytefile *bf, FILE *f = stderr)
       case 9: {
         uint64_t line = INT;
         uint64_t column = INT;
-        fprintf(f, "FAIL\t%d", line);
-        fprintf(f, "%d", column);
+        debug(f, "FAIL\t%d", line);
+        debug(f, "%d", column);
         uint64_t data = pop_operand();
         push_operand(data); // TODO eliminate
         Bmatch_failure(reinterpret_cast<void *>(data), file_name, line, column);
@@ -831,7 +833,7 @@ void run_interpreter(bytefile *bf, FILE *f = stderr)
       }
 
       case 10:
-        fprintf(f, "LINE\t%d", INT);
+        debug(f, "LINE\t%d", INT);
         break;
 
       default:
@@ -840,7 +842,7 @@ void run_interpreter(bytefile *bf, FILE *f = stderr)
       break;
 
     case 6: {
-      fprintf(f, "PATT\t%s", pats[l]);
+      debug(f, "PATT\t%s", pats[l]);
       switch (l) {
         case 0: {// strcmp
           void *first = reinterpret_cast<void *>(pop_operand());
@@ -875,30 +877,30 @@ void run_interpreter(bytefile *bf, FILE *f = stderr)
       switch (l)
       {
       case 0:
-        fprintf(f, "CALL\tLread");
+        debug(f, "CALL\tLread");
         fprintf(stdout, " ");
         push_operand(Lread());
         break;
 
       case 1:
-        fprintf(f, "CALL\tLwrite");
+        debug(f, "CALL\tLwrite");
         Lwrite(pop_operand());
         push_operand(0);
         break;
 
       case 2:
-        fprintf(f, "CALL\tLlength");
+        debug(f, "CALL\tLlength");
         push_operand(Llength(reinterpret_cast<void *>(pop_operand())));
         break;
 
       case 3:
-        fprintf(f, "CALL\tLstring");
+        debug(f, "CALL\tLstring");
         push_operand(reinterpret_cast<uint64_t>(Lstring(reinterpret_cast<aint *>(pop_operand()))));
         break;
 
       case 4: {
         uint64_t n = INT;
-        fprintf(f, "CALL\tBarray\t%d", n);
+        debug(f, "CALL\tBarray\t%d", n);
         aint args[n];
         for (int i = n - 1; i >= 0; --i) {
           args[i] = pop_operand();
@@ -917,10 +919,10 @@ void run_interpreter(bytefile *bf, FILE *f = stderr)
       FAIL; // TODO
     }
 
-    fprintf(f, "\n");
+    debug(f, "\n");
   } while (1);
 stop:
-  fprintf(f, "<end>\n");
+  debug(f, "<end>\n");
   __shutdown();
 }
 
@@ -929,16 +931,16 @@ void dump_file(FILE *f, bytefile *bf)
 {
   int i;
 
-  fprintf(f, "String table size       : %d\n", bf->stringtab_size);
-  fprintf(f, "Global area size        : %d\n", bf->global_area_size);
-  fprintf(f, "Number of public symbols: %d\n", bf->public_symbols_number);
-  fprintf(f, "Public symbols          :\n");
+  debug(f, "String table size       : %d\n", bf->stringtab_size);
+  debug(f, "Global area size        : %d\n", bf->global_area_size);
+  debug(f, "Number of public symbols: %d\n", bf->public_symbols_number);
+  debug(f, "Public symbols          :\n");
 
   bool found = false;
   for (i = 0; i < bf->public_symbols_number; i++) {
     char *name =  get_public_name(bf, i);
     uint64_t offset = get_public_offset(bf, i);
-    fprintf(f, "   0x%.8x: %s\n", offset, name);
+    debug(f, "   0x%.8x: %s\n", offset, name);
     if (std::strcmp(name, "main") == 0) {
       main_ptr = (offset);
       found = true;
@@ -946,7 +948,7 @@ void dump_file(FILE *f, bytefile *bf)
     }
   }
 
-  fprintf(f, "Code:\n");
+  debug(f, "Code:\n");
   if (!found) {
     fprintf(stderr, "No main");
     return;
