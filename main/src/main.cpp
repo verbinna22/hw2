@@ -423,6 +423,7 @@ uint64_t *get_closure(uint64_t i) {
   return reinterpret_cast<uint64_t *>(*closure_address) + (i + 1); //  Value.Access i -> I (word_size * (i + 1), r15)
 }
 
+char *file_name;
 char *chars = "_abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789'";
 
 uint64_t hash_tag(char *tag) {
@@ -823,8 +824,7 @@ void run_interpreter(bytefile *bf, FILE *f = stderr)
         fprintf(f, "%d", column);
         uint64_t data = pop_operand();
         push_operand(data); // TODO eliminate
-        char *fname = "some function";
-        Bmatch_failure(reinterpret_cast<void *>(data), fname, line, column);
+        Bmatch_failure(reinterpret_cast<void *>(data), file_name, line, column);
         break;
       }
 
@@ -881,6 +881,7 @@ void run_interpreter(bytefile *bf, FILE *f = stderr)
       case 1:
         fprintf(f, "CALL\tLwrite");
         Lwrite(pop_operand());
+        push_operand(0);
         break;
 
       case 2:
@@ -900,7 +901,7 @@ void run_interpreter(bytefile *bf, FILE *f = stderr)
         for (int i = n - 1; i >= 0; --i) {
           args[i] = pop_operand();
         }
-        Barray(args, make_boxed(n));
+        push_operand(reinterpret_cast<uint64_t>(Barray(args, make_boxed(n))));
         break;
       }
 
@@ -953,7 +954,8 @@ void dump_file(FILE *f, bytefile *bf)
 
 int main(int argc, char *argv[])
 {
-  bytefile *f = read_file(argv[1]);
+  file_name = argv[1];
+  bytefile *f = read_file(file_name);
   file = f;
   dump_file(stderr, f);
   return 0;
