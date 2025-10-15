@@ -351,7 +351,7 @@ stop:
   fprintf(f, "<end>\n");
 }
 
-#define debug(...) fprintf(__VA_ARGS__)
+#define debug(...) //fprintf(__VA_ARGS__)
 constexpr uint64_t OPERAND_STACK_SIZE_U = 1024 * 1024;
 constexpr uint64_t CALL_STACK_SIZE_U = 1024 * 1024;
 
@@ -600,7 +600,7 @@ void run_interpreter(bytefile *bf, FILE *f = stderr)
         uint64_t v = pop_operand();
         uint64_t i = pop_operand();
         uint64_t y = pop_operand();
-        Bsta(reinterpret_cast<void *>(y), static_cast<aint>(i), reinterpret_cast<void *>(v));
+        push_operand(reinterpret_cast<uint64_t>(Bsta(reinterpret_cast<void *>(y), static_cast<aint>(i), reinterpret_cast<void *>(v))));
         break;
       }
 
@@ -647,7 +647,7 @@ void run_interpreter(bytefile *bf, FILE *f = stderr)
         debug(f, "ELEM"); // TODO
         uint64_t i = pop_operand();
         uint64_t p = pop_operand();
-        Belem(reinterpret_cast<void *>(p), static_cast<aint>(i));
+        push_operand(reinterpret_cast<uint64_t>(Belem(reinterpret_cast<void *>(p), static_cast<aint>(i))));
         break;
       }
 
