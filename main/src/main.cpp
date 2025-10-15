@@ -41,6 +41,7 @@ extern aint Llength (void *p);
 extern void *Lstring (aint* args /* void *p */);
 extern void *Barray (aint* args, aint bn);
 extern size_t __gc_stack_top, __gc_stack_bottom;
+void dump_heap ();
 }
 
 /* The unpacked representation of bytecode file */
@@ -350,14 +351,14 @@ stop:
   fprintf(f, "<end>\n");
 }
 
-#define debug(...) //fprintf(__VA_ARGS__)
+#define debug(...) fprintf(__VA_ARGS__)
 constexpr uint64_t OPERAND_STACK_SIZE_U = 1024 * 1024;
 constexpr uint64_t CALL_STACK_SIZE_U = 1024 * 1024;
 
 uint64_t memory_to_simulation[1 + OPERAND_STACK_SIZE_U + CALL_STACK_SIZE_U];
 
-constexpr uint64_t *OPERAND_STACK_SIZE_BEGIN = memory_to_simulation + 1;
-constexpr uint64_t *OPERAND_STACK_SIZE_END = memory_to_simulation + 1 + OPERAND_STACK_SIZE_U;
+uint64_t *OPERAND_STACK_SIZE_BEGIN = memory_to_simulation + 1;
+uint64_t *OPERAND_STACK_SIZE_END = memory_to_simulation + 1 + OPERAND_STACK_SIZE_U;
 constexpr uint64_t *CALL_STACK_SIZE_BEGIN = memory_to_simulation + 1 + OPERAND_STACK_SIZE_U;
 constexpr uint64_t *CALL_STACK_SIZE_END = memory_to_simulation + 1 + OPERAND_STACK_SIZE_U + CALL_STACK_SIZE_U;
 uint64_t *operand_stack_end = OPERAND_STACK_SIZE_BEGIN;
@@ -367,8 +368,15 @@ uint64_t *sp = CALL_STACK_SIZE_BEGIN + 5;
 bytefile *file;
 uint main_ptr;
 
-int *get_global(uint64_t i) {
-  return file->global_ptr + i;
+void move_globals(uint64_t nglobals) {
+  OPERAND_STACK_SIZE_BEGIN += nglobals;
+  fp += nglobals;
+  sp += nglobals;
+  operand_stack_end += nglobals;
+}
+
+uint64_t *get_global(uint64_t i) {
+  return (OPERAND_STACK_SIZE_BEGIN - i - 1);//file->global_ptr + i;
 }
 
 uint64_t pop_operand() {
@@ -422,9 +430,14 @@ void print_stacks() { // TODO
     debug(stderr, " %li ", *i);
   }
 
+  debug(stderr, "\n\ngloba + clos:");
+  for (uint64_t *i = OPERAND_STACK_SIZE_BEGIN - 1; i >= memory_to_simulation; --i) {
+    debug(stderr, " %li ", *i);
+  }
+
   debug(stderr, "\n\ncall stack:");
   for (uint64_t *i = sp - 1; i >= CALL_STACK_SIZE_BEGIN; --i) {
-    debug(stderr, " %li (%x) ", *i, *i);
+    debug(stderr, " %li (%lx) ", *i, *i);
   }
   debug(stderr, "\n\n");
 }
@@ -490,8 +503,9 @@ void run_interpreter(bytefile *bf, FILE *f = stderr)
   char *pats[] = {"=str", "#string", "#array", "#sexp", "#ref", "#val", "#fun"};
   char *lds[] = {"LD", "LDA", "ST"};
   __gc_init();
-  __gc_stack_bottom = reinterpret_cast<size_t>(memory_to_simulation + sizeof(memory_to_simulation) / sizeof(memory_to_simulation[0]));
-  __gc_stack_top = reinterpret_cast<size_t>(memory_to_simulation);
+  __gc_stack_bottom = reinterpret_cast<size_t>(memory_to_simulation + sizeof(memory_to_simulation) / sizeof(memory_to_simulation[0]) - sizeof(void *));
+  __gc_stack_top = (reinterpret_cast<size_t>(memory_to_simulation) - sizeof(void *)) & (~0xFull);
+  move_globals(bf->global_area_size);
   // begin simulation jump to main
   do
   {
@@ -499,6 +513,7 @@ void run_interpreter(bytefile *bf, FILE *f = stderr)
          h = (x & 0xF0) >> 4,
          l = x & 0x0F;
 
+    dump_heap(); // TODO
     debug(f, "0x%.8x (0x%.8x):\t", ip - bf->code_ptr - 1, ip - 1);
     print_stacks();
 
@@ -649,7 +664,7 @@ void run_interpreter(bytefile *bf, FILE *f = stderr)
       {
       case 0:
         debug(f, "G(%d)", i);
-        variable = int64_t(*get_global(i));
+        variable = *get_global(i);
         debug(stderr, "%li\t", variable);
         break;
       case 1:
@@ -683,7 +698,7 @@ void run_interpreter(bytefile *bf, FILE *f = stderr)
         uint64_t value = pop_operand();
         push_operand(value);
         debug(stderr, "%li\t", value);
-        *get_global(i) = int32_t(value);
+        *get_global(i) = value;
         break;
       }
       case 1: {
@@ -770,7 +785,7 @@ void run_interpreter(bytefile *bf, FILE *f = stderr)
             case 0: {
               uint64_t j = INT;
               debug(f, "G(%d)", j);
-              args[i + 1] = int64_t(*get_global(j));
+              args[i + 1] = *get_global(j);
               break;
             }
             case 1: {
