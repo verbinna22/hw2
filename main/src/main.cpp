@@ -460,7 +460,7 @@ uint64_t make_unboxed(int64_t n) {
   return n >> 1;
 }
 
-#define debug(...) // fprintf(##__VA__ARGS__)
+#define debug(...) //fprintf(__VA_ARGS__)
 
 /* Disassembles the bytecode pool */
 void run_interpreter(bytefile *bf, FILE *f = stderr)
@@ -498,7 +498,7 @@ void run_interpreter(bytefile *bf, FILE *f = stderr)
       uint64_t result;
       uint64_t first = make_unboxed(pop_operand());
       uint64_t second = make_unboxed(pop_operand());
-      // debug(stderr, "%li %li\n", int64_t(second), int64_t(first));
+      debug(stderr, "%li %li %li\n", int64_t(second), int64_t(first), int64_t(second) > int64_t(first));
       switch (l) {
         case 1: result = second + first; break;
         case 2: result = second - first; break;
@@ -702,7 +702,7 @@ void run_interpreter(bytefile *bf, FILE *f = stderr)
       case 0: {
         uint64_t addr = INT;
         debug(f, "CJMPz\t0x%.8x", addr); // TODO
-        uint64_t value = pop_operand();
+        uint64_t value = make_unboxed(pop_operand());
         if (value == 0) {
           ip = addr + bf->code_ptr;
         }
@@ -712,7 +712,8 @@ void run_interpreter(bytefile *bf, FILE *f = stderr)
       case 1: {
         uint64_t addr = INT;
         debug(f, "CJMPnz\t0x%.8x", addr); // TODO
-        uint64_t value = pop_operand();
+        uint64_t value = make_unboxed(pop_operand());
+        debug(stderr, "%li\n", int64_t(value));
         if (value != 0) {
           ip = addr + bf->code_ptr;
         }
@@ -832,9 +833,11 @@ void run_interpreter(bytefile *bf, FILE *f = stderr)
         break;
       }
 
-      case 10:
-        debug(f, "LINE\t%d", INT);
+      case 10: {
+        uint64_t n = INT;
+        debug(f, "LINE\t%d", n);
         break;
+      }
 
       default:
         FAIL; // TODO remove
