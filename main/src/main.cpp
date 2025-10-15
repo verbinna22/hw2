@@ -350,7 +350,7 @@ stop:
   fprintf(f, "<end>\n");
 }
 
-#define debug(...) //fprintf(__VA_ARGS__)
+#define debug(...) fprintf(__VA_ARGS__)
 constexpr uint64_t OPERAND_STACK_SIZE_U = 1024 * 1024;
 constexpr uint64_t CALL_STACK_SIZE_U = 1024 * 1024;
 
@@ -424,8 +424,9 @@ void print_stacks() { // TODO
 
   fprintf(stderr, "\n\ncall stack:");
   for (uint64_t *i = sp - 1; i >= CALL_STACK_SIZE_BEGIN; --i) {
-    fprintf(stderr, " %li ", *i);
+    fprintf(stderr, " %li (%x) ", *i, *i);
   }
+  fprintf(stderr, "\n\n");
 }
 
 uint64_t *get_arg(uint64_t i) {
@@ -457,6 +458,9 @@ uint64_t hash_tag(char *tag) {
 }
 
 char *call_end() {
+  if (sp == fp) {
+    exit(0); // TODO normal
+  }
   char *result = reinterpret_cast<char *>(fp[0]);
   uint64_t *need_sp = reinterpret_cast<uint64_t *>(fp[1]);
   fp = reinterpret_cast<uint64_t *>(fp[2]);
@@ -498,7 +502,8 @@ void run_interpreter(bytefile *bf, FILE *f = stderr)
          h = (x & 0xF0) >> 4,
          l = x & 0x0F;
 
-    debug(f, "0x%.8x:\t", ip - bf->code_ptr - 1);
+    debug(f, "0x%.8x (0x%.8x):\t", ip - bf->code_ptr - 1, ip - 1);
+    print_stacks();
 
     switch (h)
     {
@@ -596,12 +601,12 @@ void run_interpreter(bytefile *bf, FILE *f = stderr)
 
       case 6:
         debug(f, "END"); // TODO
-        call_end();
+        ip = call_end();
         break;
 
       case 7:
         debug(f, "RET"); // TODO
-        call_end();
+        ip = call_end();
         break;
 
       case 8:
