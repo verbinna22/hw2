@@ -556,7 +556,7 @@ void run_interpreter(bytefile *bf, FILE *f = stderr)
       case 1: {
         uint64_t ptr = reinterpret_cast<uint64_t>(STRING);
         debug(f, "STRING\t%s", ptr); // TODO
-        uint64_t allocated_ptr = reinterpret_cast<uint64_t>(Bstring(reinterpret_cast<aint *>(ptr)));
+        uint64_t allocated_ptr = reinterpret_cast<uint64_t>(Bstring(reinterpret_cast<aint *>(&ptr)));
         push_operand(allocated_ptr);
         break;
       }
