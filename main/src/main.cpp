@@ -379,7 +379,10 @@ uint64_t pop_operand() {
 
 void push_operand(uint64_t operand) {
   *operand_stack_end = operand;
-  ++operand_stack_end;
+  ++operand_stack_end; 
+  if (operand_stack_end >= OPERAND_STACK_SIZE_END) {
+    throw std::logic_error("op stack overflow"); // TODO overflow
+  }
 }
 
 void call_begin(uint64_t nargs, char *next) {
@@ -391,10 +394,16 @@ void call_begin(uint64_t nargs, char *next) {
   sp[nargs + 2] = reinterpret_cast<uint64_t>(fp);
   fp = &sp[nargs];
   sp += (nargs + 3);
+  if (sp >= CALL_STACK_SIZE_END) {
+    throw std::logic_error("call stack overflow"); // TODO overflow
+  }
 }
 
 void alloc_locals(uint64_t nlocals) {
   sp += nlocals;
+  if (sp >= CALL_STACK_SIZE_END) {
+    throw std::logic_error("call stack overflow"); // TODO overflow
+  }
 }
 
 uint64_t *get_local(uint64_t i) {
