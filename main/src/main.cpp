@@ -350,7 +350,7 @@ stop:
   fprintf(f, "<end>\n");
 }
 
-#define debug(...) fprintf(__VA_ARGS__)
+#define debug(...) //fprintf(__VA_ARGS__)
 constexpr uint64_t OPERAND_STACK_SIZE_U = 1024 * 1024;
 constexpr uint64_t CALL_STACK_SIZE_U = 1024 * 1024;
 
@@ -361,8 +361,8 @@ constexpr uint64_t *OPERAND_STACK_SIZE_END = memory_to_simulation + 1 + OPERAND_
 constexpr uint64_t *CALL_STACK_SIZE_BEGIN = memory_to_simulation + 1 + OPERAND_STACK_SIZE_U;
 constexpr uint64_t *CALL_STACK_SIZE_END = memory_to_simulation + 1 + OPERAND_STACK_SIZE_U + CALL_STACK_SIZE_U;
 uint64_t *operand_stack_end = OPERAND_STACK_SIZE_BEGIN;
-uint64_t *fp = CALL_STACK_SIZE_BEGIN;
-uint64_t *sp = CALL_STACK_SIZE_BEGIN;
+uint64_t *fp = CALL_STACK_SIZE_BEGIN + 2;
+uint64_t *sp = CALL_STACK_SIZE_BEGIN + 5;
 
 bytefile *file;
 uint main_ptr;
@@ -417,16 +417,16 @@ uint64_t *get_local(uint64_t i) {
 }
 
 void print_stacks() { // TODO
-  fprintf(stderr, "\n\nstack:");
+  debug(stderr, "\n\nstack:");
   for (uint64_t *i = operand_stack_end - 1; i >= OPERAND_STACK_SIZE_BEGIN; --i) {
-    fprintf(stderr, " %li ", *i);
+    debug(stderr, " %li ", *i);
   }
 
-  fprintf(stderr, "\n\ncall stack:");
+  debug(stderr, "\n\ncall stack:");
   for (uint64_t *i = sp - 1; i >= CALL_STACK_SIZE_BEGIN; --i) {
-    fprintf(stderr, " %li (%x) ", *i, *i);
+    debug(stderr, " %li (%x) ", *i, *i);
   }
-  fprintf(stderr, "\n\n");
+  debug(stderr, "\n\n");
 }
 
 uint64_t *get_arg(uint64_t i) {
@@ -458,9 +458,6 @@ uint64_t hash_tag(char *tag) {
 }
 
 char *call_end() {
-  if (sp == fp) {
-    exit(0); // TODO normal
-  }
   char *result = reinterpret_cast<char *>(fp[0]);
   uint64_t *need_sp = reinterpret_cast<uint64_t *>(fp[1]);
   fp = reinterpret_cast<uint64_t *>(fp[2]);
@@ -944,7 +941,7 @@ void run_interpreter(bytefile *bf, FILE *f = stderr)
     }
 
     debug(f, "\n");
-  } while (1);
+  } while (sp != nullptr);
 stop:
   debug(f, "<end>\n");
   __shutdown();
