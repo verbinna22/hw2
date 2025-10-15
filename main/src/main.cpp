@@ -350,6 +350,7 @@ stop:
   fprintf(f, "<end>\n");
 }
 
+#define debug(...) //fprintf(__VA_ARGS__)
 constexpr uint64_t OPERAND_STACK_SIZE_U = 1024 * 1024;
 constexpr uint64_t CALL_STACK_SIZE_U = 1024 * 1024;
 
@@ -360,8 +361,8 @@ constexpr uint64_t *OPERAND_STACK_SIZE_END = memory_to_simulation + 1 + OPERAND_
 constexpr uint64_t *CALL_STACK_SIZE_BEGIN = memory_to_simulation + 1 + OPERAND_STACK_SIZE_U;
 constexpr uint64_t *CALL_STACK_SIZE_END = memory_to_simulation + 1 + OPERAND_STACK_SIZE_U + CALL_STACK_SIZE_U;
 uint64_t *operand_stack_end = OPERAND_STACK_SIZE_BEGIN;
-uint64_t *fp = OPERAND_STACK_SIZE_BEGIN;
-uint64_t *sp = OPERAND_STACK_SIZE_BEGIN;
+uint64_t *fp = CALL_STACK_SIZE_BEGIN;
+uint64_t *sp = CALL_STACK_SIZE_BEGIN;
 
 bytefile *file;
 uint main_ptr;
@@ -404,13 +405,27 @@ void call_begin(uint64_t nargs, char *next) {
 
 void alloc_locals(uint64_t nlocals) {
   sp += nlocals;
+  debug(stderr, "\nalloc locals:\t%lu\n", nlocals);
   if (sp >= CALL_STACK_SIZE_END) {
     throw std::logic_error("call stack overflow"); // TODO overflow
   }
 }
 
 uint64_t *get_local(uint64_t i) {
+  debug(stderr, "\tget local:%li sp%x osb%x\n", *(sp - i - 1), sp, OPERAND_STACK_SIZE_BEGIN);
   return (sp - i - 1);
+}
+
+void print_stacks() { // TODO
+  fprintf(stderr, "\n\nstack:");
+  for (uint64_t *i = operand_stack_end - 1; i >= OPERAND_STACK_SIZE_BEGIN; --i) {
+    fprintf(stderr, " %li ", *i);
+  }
+
+  fprintf(stderr, "\n\ncall stack:");
+  for (uint64_t *i = sp - 1; i >= CALL_STACK_SIZE_BEGIN; --i) {
+    fprintf(stderr, " %li ", *i);
+  }
 }
 
 uint64_t *get_arg(uint64_t i) {
@@ -459,8 +474,6 @@ uint64_t make_boxed(uint64_t n) {
 uint64_t make_unboxed(int64_t n) {
   return n >> 1;
 }
-
-#define debug(...) //fprintf(__VA_ARGS__)
 
 /* Disassembles the bytecode pool */
 void run_interpreter(bytefile *bf, FILE *f = stderr)
@@ -534,7 +547,7 @@ void run_interpreter(bytefile *bf, FILE *f = stderr)
       case 0: {
         uint64_t n = INT;
         debug(f, "CONST\t%d", n); // TODO
-        push_operand((n << 1) + 1);
+        push_operand(make_boxed(n));
         break;
       }
 
@@ -635,11 +648,12 @@ void run_interpreter(bytefile *bf, FILE *f = stderr)
       case 0:
         debug(f, "G(%d)", i);
         variable = int64_t(*get_global(i));
-        // debug(stderr, "%li\t", variable);
+        debug(stderr, "%li\t", variable);
         break;
       case 1:
         debug(f, "L(%d)", i);
         variable = *get_local(i);
+        debug(stderr, "%li\t", variable);
         break;
       case 2:
         debug(f, "A(%d)", i);
@@ -666,6 +680,7 @@ void run_interpreter(bytefile *bf, FILE *f = stderr)
         debug(f, "G(%d)", i);
         uint64_t value = pop_operand();
         push_operand(value);
+        debug(stderr, "%li\t", value);
         *get_global(i) = int32_t(value);
         break;
       }
@@ -673,6 +688,7 @@ void run_interpreter(bytefile *bf, FILE *f = stderr)
         debug(f, "L(%d)", i);
         uint64_t value = pop_operand();
         push_operand(value);
+        debug(stderr, "%li\t", value);
         *get_local(i) = value;
         break;
       }
