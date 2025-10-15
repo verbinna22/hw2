@@ -53,7 +53,7 @@ clangd: clean
 	bear -- make
 
 $(BUILD_DIR)/$(TARGET_EXEC): main/src/runtime $(OBJS)
-	$(CC) $(OBJS) -o $@ $(LDFLAGS)
+	$(CXX) $(OBJS) -o $@ $(LDFLAGS)
 
 $(BUILD_DIR)/%.cpp.o: %.cpp
 	mkdir -p $(dir $@)
