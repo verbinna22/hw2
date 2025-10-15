@@ -867,6 +867,7 @@ void run_interpreter(bytefile *bf, FILE *f = stderr)
       {
       case 0:
         fprintf(f, "CALL\tLread");
+        fprintf(stdout, " ");
         push_operand(Lread());
         break;
 
