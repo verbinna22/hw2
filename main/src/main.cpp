@@ -456,7 +456,7 @@ uint64_t make_boxed(uint64_t n) {
   return (n << 1) + 1;
 }
 
-uint64_t make_unboxed(uint64_t n) {
+uint64_t make_unboxed(int64_t n) {
   return n >> 1;
 }
 
@@ -494,8 +494,9 @@ void run_interpreter(bytefile *bf, FILE *f = stderr)
     case 0: {
       fprintf(f, "BINOP\t%s", ops[l - 1]); // TODO
       uint64_t result;
-      uint64_t first = pop_operand() >> 1;
-      uint64_t second = pop_operand() >> 1;
+      uint64_t first = make_unboxed(pop_operand());
+      uint64_t second = make_unboxed(pop_operand());
+      // fprintf(stderr, "%li %li\n", int64_t(second), int64_t(first));
       switch (l) {
         case 1: result = second + first; break;
         case 2: result = second - first; break;
@@ -631,7 +632,8 @@ void run_interpreter(bytefile *bf, FILE *f = stderr)
       {
       case 0:
         fprintf(f, "G(%d)", i);
-        variable = *get_global(i);
+        variable = int64_t(*get_global(i));
+        // fprintf(stderr, "%li\t", variable);
         break;
       case 1:
         fprintf(f, "L(%d)", i);
@@ -662,7 +664,7 @@ void run_interpreter(bytefile *bf, FILE *f = stderr)
         fprintf(f, "G(%d)", i);
         uint64_t value = pop_operand();
         push_operand(value);
-        *get_global(i) = value;
+        *get_global(i) = int32_t(value);
         break;
       }
       case 1: {
@@ -747,7 +749,7 @@ void run_interpreter(bytefile *bf, FILE *f = stderr)
             case 0: {
               uint64_t j = INT;
               fprintf(f, "G(%d)", j);
-              args[i + 1] = *get_global(j);
+              args[i + 1] = int64_t(*get_global(j));
               break;
             }
             case 1: {
