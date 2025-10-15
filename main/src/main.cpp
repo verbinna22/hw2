@@ -2,9 +2,11 @@
 
 #include "runtime/runtime_common.h"
 #include <algorithm>
+#include <bits/types/clockid_t.h>
 #include <cstdint>
 #include <cstring>
 #include <stdexcept>
+#include <stdint.h>
 extern "C" {
 #define _Noreturn [[noreturn]]
 #include <string.h>
@@ -19,6 +21,23 @@ void *__stop_custom_data;
 extern void *Bstring (aint* args/*void *p*/);
 extern void *Bsexp (aint* args, aint bn);
 extern void *Bsta (void *x, aint i, void *v);
+extern void *Belem (void *p, aint i);
+extern void *Bclosure (aint* args, aint bn);
+extern aint Btag (void *d, aint t, aint n);
+extern aint Barray_patt (void *d, aint n);
+extern void Bmatch_failure (void *v, char *fname, aint line, aint col);
+extern aint Bboxed_patt (void *x);
+extern aint Bunboxed_patt (void *x);
+extern aint Bstring_patt (void *x, void *y);
+extern aint Bstring_tag_patt (void *x);
+extern aint Barray_tag_patt (void *x);
+extern aint Bsexp_tag_patt (void *x);
+extern aint Bclosure_tag_patt (void *x);
+extern aint Lread ();
+extern aint Lwrite (aint n);
+extern aint Llength (void *p);
+extern void *Lstring (aint* args /* void *p */);
+extern void *Barray (aint* args, aint bn);
 extern size_t __gc_stack_top, __gc_stack_bottom;
 }
 
@@ -332,18 +351,20 @@ stop:
 constexpr uint64_t OPERAND_STACK_SIZE_U = 1024 * 1024;
 constexpr uint64_t CALL_STACK_SIZE_U = 1024 * 1024;
 
-uint64_t memory_to_simulation[OPERAND_STACK_SIZE_U + CALL_STACK_SIZE_U];
+uint64_t memory_to_simulation[1 + OPERAND_STACK_SIZE_U + CALL_STACK_SIZE_U];
 
-constexpr uint64_t *OPERAND_STACK_SIZE_BEGIN = memory_to_simulation;
-constexpr uint64_t *OPERAND_STACK_SIZE_END = memory_to_simulation + OPERAND_STACK_SIZE_U;
-constexpr uint64_t *CALL_STACK_SIZE_BEGIN = memory_to_simulation + OPERAND_STACK_SIZE_U;
-constexpr uint64_t *CALL_STACK_SIZE_END = memory_to_simulation + OPERAND_STACK_SIZE_U + CALL_STACK_SIZE_U;
+constexpr uint64_t *OPERAND_STACK_SIZE_BEGIN = memory_to_simulation + 1;
+constexpr uint64_t *OPERAND_STACK_SIZE_END = memory_to_simulation + 1 + OPERAND_STACK_SIZE_U;
+constexpr uint64_t *CALL_STACK_SIZE_BEGIN = memory_to_simulation + 1 + OPERAND_STACK_SIZE_U;
+constexpr uint64_t *CALL_STACK_SIZE_END = memory_to_simulation + 1 + OPERAND_STACK_SIZE_U + CALL_STACK_SIZE_U;
 uint64_t *operand_stack_end = OPERAND_STACK_SIZE_BEGIN;
 uint64_t *fp = OPERAND_STACK_SIZE_BEGIN;
 uint64_t *sp = OPERAND_STACK_SIZE_BEGIN;
 
-uint64_t get_global(uint64_t i) {
-  return CALL_STACK_SIZE_BEGIN[i];
+bytefile *file;
+
+int *get_global(uint64_t i) {
+  return file->global_ptr + i;
 }
 
 uint64_t pop_operand() {
@@ -369,12 +390,22 @@ void call_begin(uint64_t nargs, char *next) {
   sp += (nargs + 3);
 }
 
-uint64_t get_local(uint64_t i) {
-  return *(sp - i - 1);
+void alloc_locals(uint64_t nlocals) {
+  sp += nlocals;
 }
 
-uint64_t get_arg(uint64_t i) {
-  return *(fp - i - 1);
+uint64_t *get_local(uint64_t i) {
+  return (sp - i - 1);
+}
+
+uint64_t *get_arg(uint64_t i) {
+  return (fp - i - 1);
+}
+
+uint64_t *closure_address = memory_to_simulation;
+
+uint64_t *get_closure(uint64_t i) {
+  return reinterpret_cast<uint64_t *>(*closure_address) + (i + 1); //  Value.Access i -> I (word_size * (i + 1), r15)
 }
 
 char *chars = "_abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789'";
@@ -516,8 +547,8 @@ void run_interpreter(bytefile *bf, FILE *f = stderr)
         fprintf(f, "STA");  // TODO
         uint64_t v = pop_operand();
         uint64_t i = pop_operand();
-        uint64_t x = pop_operand();
-        Bsta(reinterpret_cast<void *>(x), static_cast<aint>(i), reinterpret_cast<void *>(v));
+        uint64_t y = pop_operand();
+        Bsta(reinterpret_cast<void *>(y), static_cast<aint>(i), reinterpret_cast<void *>(v));
         break;
       }
 
@@ -560,10 +591,13 @@ void run_interpreter(bytefile *bf, FILE *f = stderr)
         break;
       }
 
-      case 11:
-        // compile_call env ~fname:".elem" 2 false // TODO call
+      case 11: {
         fprintf(f, "ELEM"); // TODO
+        uint64_t i = pop_operand();
+        uint64_t p = pop_operand();
+        Belem(reinterpret_cast<void *>(p), static_cast<aint>(i));
         break;
+      }
 
       default:
         FAIL; // TODO: another check
@@ -572,69 +606,66 @@ void run_interpreter(bytefile *bf, FILE *f = stderr)
 
     case 2: {// LD
       fprintf(f, "%s\t", lds[h - 2]);
+      uint64_t variable;
+      uint64_t i = INT;
       switch (l)
       {
       case 0:
-        fprintf(f, "G(%d)", INT);
+        fprintf(f, "G(%d)", i);
+        variable = *get_global(i);
         break;
       case 1:
-        fprintf(f, "L(%d)", INT);
+        fprintf(f, "L(%d)", i);
+        variable = *get_local(i);
         break;
       case 2:
-        fprintf(f, "A(%d)", INT);
+        fprintf(f, "A(%d)", i);
+        variable = *get_arg(i);
         break;
       case 3:
-        fprintf(f, "C(%d)", INT);
+        fprintf(f, "C(%d)", i);
+        variable = *get_closure(i);
         break;
       default:
         FAIL;
       }
-      uint64_t variable = 0; // TODO somehow load
       push_operand(variable);
       break;
     }
     case 3: // LDA
       throw std::logic_error("LDA temporary prohibited");
-      fprintf(f, "%s\t", lds[h - 2]);
-      switch (l)
-      {
-      case 0:
-        fprintf(f, "G(%d)", INT);
-        break;
-      case 1:
-        fprintf(f, "L(%d)", INT);
-        break;
-      case 2:
-        fprintf(f, "A(%d)", INT);
-        break;
-      case 3:
-        fprintf(f, "C(%d)", INT);
-        break;
-      default:
-        FAIL;
-      }
-      break;
     case 4: {// ST
-      // TODO somehow save
       fprintf(f, "%s\t", lds[h - 2]); // TODO
+      uint64_t i = INT;
       switch (l)
       {
-      case 0:
-        fprintf(f, "G(%d)", INT);
+      case 0: {
+        fprintf(f, "G(%d)", i);
+        uint64_t value = pop_operand();
+        *get_global(i) = value;
         break;
-      case 1:
-        fprintf(f, "L(%d)", INT);
+      }
+      case 1: {
+        fprintf(f, "L(%d)", i);
+        uint64_t value = pop_operand();
+        *get_local(i) = value;
         break;
-      case 2:
-        fprintf(f, "A(%d)", INT);
+      }
+      case 2: {
+        fprintf(f, "A(%d)", i);
+        uint64_t value = pop_operand();
+        *get_arg(i) = value;
         break;
-      case 3:
-        fprintf(f, "C(%d)", INT);
+      }
+      case 3: {
+        fprintf(f, "C(%d)", i);
+        uint64_t value = pop_operand();
+        *get_closure(i) = value;
         break;
+      }
       default:
         FAIL;
       }
-      uint64_t value = pop_operand();
       break;
     }
 
@@ -664,69 +695,71 @@ void run_interpreter(bytefile *bf, FILE *f = stderr)
       case 2: {
         uint64_t nargs = INT;
         uint64_t nlocals = INT;
-        // TODO: perform fcall
         fprintf(f, "BEGIN\t%d ", nargs); // TODO
         fprintf(f, "%d", nlocals);
+        alloc_locals(nlocals);
         break;
       }
 
       case 3: {
         uint64_t nargs = INT;
         uint64_t nlocals = INT;
-        // TODO: perform fcall
-        fprintf(f, "CBEGIN\t%d ", INT);
-        fprintf(f, "%d", INT);
+        fprintf(f, "CBEGIN\t%d ", nargs);
+        fprintf(f, "%d", nlocals);
+        alloc_locals(nlocals);
         break;
       }
 
       case 4: {
-        fprintf(f, "CLOSURE\t0x%.8x", INT); // TODO
-        {
+        uint64_t addr = INT;
+        fprintf(f, "CLOSURE\t0x%.8x", addr); // TODO
           int n = INT;
+          aint args[n + 1];
+          {
+          args[0] = addr;
           for (int i = 0; i < n; i++)
           {
             switch (BYTE)
             {
-            case 0:
-              fprintf(f, "G(%d)", INT);
+            case 0: {
+              uint64_t j = INT;
+              fprintf(f, "G(%d)", j);
+              args[i + 1] = *get_global(j);
               break;
-            case 1:
-              fprintf(f, "L(%d)", INT);
+            }
+            case 1: {
+              uint64_t j = INT;
+              fprintf(f, "L(%d)", j);
+              args[i + 1] = *get_local(j);
               break;
-            case 2:
-              fprintf(f, "A(%d)", INT);
+            }
+            case 2: {
+              uint64_t j = INT;
+              fprintf(f, "A(%d)", j);
+              args[i + 1] = *get_arg(j);
               break;
-            case 3:
-              fprintf(f, "C(%d)", INT);
+            }
+            case 3: {
+              uint64_t j = INT;
+              fprintf(f, "C(%d)", j);
+              args[i + 1] = *get_closure(j);
               break;
+            }
             default:
               FAIL;
             }
           }
         };
-        // let ext = if env#is_external name then E else I in
-        //         let address = M (F, ext, A, name) in
-        //         let l, env = env#allocate in
-        //         let env, push_closure_code =
-        //           List.fold_left
-        //             (fun (env, code) c ->
-        //               let cr, env = env#allocate in
-        //               (env, mov (env#loc c) cr @ code))
-        //             (env, []) closure
-        //         in
-        //         let env, call_code =
-        //           compile_call env ~fname:".closure"
-        //             (1 + List.length closure)
-        //             false
-        //         in
-        //         (env, push_closure_code @ mov address l @ call_code) // TODO call closure
+        Bclosure(args, make_boxed(n));
         break;
       }
 
       case 5: {
         uint64_t args_number = INT;
         fprintf(f, "CALLC\t%d", args_number);
-        // compile call // TODO
+        call_begin(args_number, ip);
+        *closure_address = pop_operand();
+        ip = *closure_address + bf->code_ptr + 1;
         break;
       }
 
@@ -735,7 +768,8 @@ void run_interpreter(bytefile *bf, FILE *f = stderr)
         uint64_t args_number = INT;
         fprintf(f, "CALL\t0x%.8x ", addr); // TODO
         fprintf(f, "%d", args_number);
-        // compile call // TODO
+        call_begin(args_number, ip);
+        ip = addr + bf->code_ptr + 1;
         break;
       }
 
@@ -744,9 +778,9 @@ void run_interpreter(bytefile *bf, FILE *f = stderr)
         uint64_t size = INT;
         fprintf(f, "TAG\t%s ", string_ptr);
         fprintf(f, "%d", size); // TODO
-        // TODO: calculate hash
-        // TODO: fcall
-        uint64_t value = 0;
+        uint64_t data = pop_operand();
+        uint64_t value = Btag(
+          reinterpret_cast<char *>(data), hash_tag(reinterpret_cast<char *>(string_ptr)), make_boxed(size));
         push_operand(value);
         break;
       }
@@ -754,11 +788,8 @@ void run_interpreter(bytefile *bf, FILE *f = stderr)
       case 8: {
         uint64_t size = INT;
         fprintf(f, "ARRAY\t%d", size); // TODO
-        // let s, env = env#allocate in
-        //         let env, code = compile_call env ~fname:".array_patt" 2 false in
-        //         (env, [ Mov (L (box n), s) ] @ code)
-        // TODO array call
-        uint64_t value = 0;
+        uint64_t data = pop_operand();
+        uint64_t value = Barray_patt(reinterpret_cast<void *>(data), make_boxed(size));
         push_operand(value);
         break;
       }
@@ -768,20 +799,10 @@ void run_interpreter(bytefile *bf, FILE *f = stderr)
         uint64_t column = INT;
         fprintf(f, "FAIL\t%d", line);
         fprintf(f, "%d", column);
-        // let value, env = if value then (env#peek, env) else env#pop in
-        //         let msg_addr, env = env#string cmd#get_infile in
-        //         let value_arg_addr, env = env#allocate in
-        //         let msg_arg_addr, env = env#allocate in
-        //         let line_arg_addr, env = env#allocate in
-        //         let col_arg_addr, env = env#allocate in
-        //         let env, code =
-        //           compile_call env ~fname:".match_failure" 4 false
-        //         in
-        //         let _, env = env#pop in
-        //         ( env,
-        //           mov (L (box col)) col_arg_addr @ mov (L (box line)) line_arg_addr
-        //           @ mov msg_addr msg_arg_addr @ mov value value_arg_addr @ code
-        //         ) // TODO: perform call
+        uint64_t data = pop_operand();
+        push_operand(data); // TODO eliminate
+        char *fname = "some function";
+        Bmatch_failure(reinterpret_cast<void *>(data), fname, line, column);
         break;
       }
 
@@ -796,22 +817,32 @@ void run_interpreter(bytefile *bf, FILE *f = stderr)
 
     case 6: {
       fprintf(f, "PATT\t%s", pats[l]);
-      // | PATT StrCmp -> compile_call env ~fname:".string_patt" 2 false
-      //       | PATT patt ->
-      //           compile_call env
-      //             ~fname:
-      //               (match patt with
-      //               | Boxed -> ".boxed_patt"
-      //               | UnBoxed -> ".unboxed_patt"
-      //               | Array -> ".array_tag_patt"
-      //               | String -> ".string_tag_patt"
-      //               | Sexp -> ".sexp_tag_patt"
-      //               | Closure -> ".closure_tag_patt"
-      //               | StrCmp ->
-      //                   failwith
-      //                     (Printf.sprintf "Unexpected pattern: StrCmp %s: %d"
-      //                        __FILE__ __LINE__))
-      //             1 false // TODO patt
+      switch (l) {
+        case 0: {// strcmp
+          void *first = reinterpret_cast<void *>(pop_operand());
+          void *second = reinterpret_cast<void *>(pop_operand());
+          push_operand(Bstring_patt(first, second));
+          break;
+        }
+        case 1: // string
+          push_operand(Bstring_tag_patt(reinterpret_cast<void *>(pop_operand())));
+          break;
+        case 2: // array
+          push_operand(Barray_tag_patt(reinterpret_cast<void *>(pop_operand())));
+          break;
+        case 3: // sexp
+          push_operand(Bsexp_tag_patt(reinterpret_cast<void *>(pop_operand())));
+          break;
+        case 4: // ref = boxed
+          push_operand(Bboxed_patt(reinterpret_cast<void *>(pop_operand())));
+          break;
+        case 5: // val = unboxed
+          push_operand(Bunboxed_patt(reinterpret_cast<void *>(pop_operand())));
+          break;
+        case 6: // fun
+          push_operand(Bclosure_tag_patt(reinterpret_cast<void *>(pop_operand())));
+          break;
+      }
       break;
     }
 
@@ -821,23 +852,34 @@ void run_interpreter(bytefile *bf, FILE *f = stderr)
       {
       case 0:
         fprintf(f, "CALL\tLread");
+        push_operand(Lread());
         break;
 
       case 1:
         fprintf(f, "CALL\tLwrite");
+        Lwrite(pop_operand());
         break;
 
       case 2:
         fprintf(f, "CALL\tLlength");
+        push_operand(Llength(reinterpret_cast<void *>(pop_operand())));
         break;
 
       case 3:
         fprintf(f, "CALL\tLstring");
+        push_operand(reinterpret_cast<uint64_t>(Lstring(reinterpret_cast<aint *>(pop_operand()))));
         break;
 
-      case 4:
-        fprintf(f, "CALL\tBarray\t%d", INT);
+      case 4: {
+        uint64_t n = INT;
+        fprintf(f, "CALL\tBarray\t%d", n);
+        aint args[n];
+        for (int i = n - 1; i >= 0; --i) {
+          args[i] = pop_operand();
+        }
+        Barray(args, make_boxed(n));
         break;
+      }
 
       default:
         FAIL; // TODO
