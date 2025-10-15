@@ -1,8 +1,10 @@
 /* Lama SM Bytecode interpreter */
 
+#include "runtime/gc.h"
 #include "runtime/runtime_common.h"
 #include <algorithm>
 #include <bits/types/clockid_t.h>
+#include <cstddef>
 #include <cstdint>
 #include <cstring>
 #include <stdexcept>
@@ -362,6 +364,7 @@ uint64_t *fp = OPERAND_STACK_SIZE_BEGIN;
 uint64_t *sp = OPERAND_STACK_SIZE_BEGIN;
 
 bytefile *file;
+char *main_ptr;
 
 int *get_global(uint64_t i) {
   return file->global_ptr + i;
@@ -453,10 +456,13 @@ void run_interpreter(bytefile *bf, FILE *f = stderr)
 #define STRING get_string(bf, INT)
 #define FAIL failure("ERROR: invalid opcode %d-%d\n", h, l)
 
-  char *ip = bf->code_ptr;
+  char *ip = main_ptr;
   char *ops[] = {"+", "-", "*", "/", "%", "<", "<=", ">", ">=", "==", "!=", "&&", "!!"};
   char *pats[] = {"=str", "#string", "#array", "#sexp", "#ref", "#val", "#fun"};
   char *lds[] = {"LD", "LDA", "ST"};
+  __gc_stack_bottom = reinterpret_cast<size_t>(memory_to_simulation + sizeof(memory_to_simulation) / sizeof(memory_to_simulation[0]));
+  __gc_stack_top = reinterpret_cast<size_t>(memory_to_simulation);
+  __init();
   // begin simulation jump to main
   do
   {
@@ -555,7 +561,7 @@ void run_interpreter(bytefile *bf, FILE *f = stderr)
       case 5: {
         uint64_t addr = INT;
         fprintf(f, "JMP\t0x%.8x", addr); // TODO
-        ip = addr + bf->code_ptr + 1;
+        ip = addr + bf->code_ptr;
         break;
       }
 
@@ -677,7 +683,7 @@ void run_interpreter(bytefile *bf, FILE *f = stderr)
         fprintf(f, "CJMPz\t0x%.8x", addr); // TODO
         uint64_t value = pop_operand();
         if (value == 0) {
-          ip = addr + bf->code_ptr + 1;
+          ip = addr + bf->code_ptr;
         }
         break;
       }
@@ -687,7 +693,7 @@ void run_interpreter(bytefile *bf, FILE *f = stderr)
         fprintf(f, "CJMPnz\t0x%.8x", addr); // TODO
         uint64_t value = pop_operand();
         if (value != 0) {
-          ip = addr + bf->code_ptr + 1;
+          ip = addr + bf->code_ptr;
         }
         break;
       }
@@ -759,7 +765,7 @@ void run_interpreter(bytefile *bf, FILE *f = stderr)
         fprintf(f, "CALLC\t%d", args_number);
         call_begin(args_number, ip);
         *closure_address = pop_operand();
-        ip = *closure_address + bf->code_ptr + 1;
+        ip = *closure_address + bf->code_ptr;
         break;
       }
 
@@ -769,7 +775,7 @@ void run_interpreter(bytefile *bf, FILE *f = stderr)
         fprintf(f, "CALL\t0x%.8x ", addr); // TODO
         fprintf(f, "%d", args_number);
         call_begin(args_number, ip);
-        ip = addr + bf->code_ptr + 1;
+        ip = addr + bf->code_ptr;
         break;
       }
 
@@ -895,6 +901,7 @@ void run_interpreter(bytefile *bf, FILE *f = stderr)
   } while (1);
 stop:
   fprintf(f, "<end>\n");
+  __shutdown();
 }
 
 /* Dumps the contents of the file */
@@ -907,16 +914,27 @@ void dump_file(FILE *f, bytefile *bf)
   fprintf(f, "Number of public symbols: %d\n", bf->public_symbols_number);
   fprintf(f, "Public symbols          :\n");
 
-  for (i = 0; i < bf->public_symbols_number; i++)
-    fprintf(f, "   0x%.8x: %s\n", get_public_offset(bf, i), get_public_name(bf, i));
+  for (i = 0; i < bf->public_symbols_number; i++) {
+    char *name =  get_public_name(bf, i);
+    uint64_t offset = get_public_offset(bf, i);
+    fprintf(f, "   0x%.8x: %s\n", offset, name);
+    if (std::strcmp(name, "main") == 0) {
+      main_ptr = reinterpret_cast<char *>(offset);
+    }
+  }
 
   fprintf(f, "Code:\n");
-  disassemble(f, bf);
+  if (main_ptr == nullptr) {
+    fprintf(stderr, "No main");
+    return;
+  }
+  run_interpreter(bf);
 }
 
 int main(int argc, char *argv[])
 {
   bytefile *f = read_file(argv[1]);
-  dump_file(stdout, f);
+  file = f;
+  dump_file(stderr, f);
   return 0;
 }
