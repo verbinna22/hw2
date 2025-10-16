@@ -537,10 +537,7 @@ char *safe_get_ip(char* ip, size_t size) {
 void check_file(FILE *f, bytefile *bf)
 {
   char *ip = bf->code_ptr;
-  char *ops[] = {"+", "-", "*", "/", "%", "<", "<=", ">", ">=", "==", "!=", "&&", "!!"};
-  char *pats[] = {"=str", "#string", "#array", "#sexp", "#ref", "#val", "#fun"};
-  char *lds[] = {"LD", "LDA", "ST"};
-
+  
   bool was_begin = false;
   uint64_t globals = bf->global_area_size;
   uint64_t locals = 0;
@@ -560,7 +557,6 @@ void check_file(FILE *f, bytefile *bf)
          l = x & 0x0F;
 
     uint64_t current_addr = ip - bf->code_ptr - 1;
-    fprintf(f, "0x%.8x:\t", current_addr);
     if (!was_begin && (h != 5 || l != 2)) {
       throw std::logic_error("should be BEGIN instruction");
     }
@@ -605,30 +601,25 @@ void check_file(FILE *f, bytefile *bf)
       if (l < 1 || l > 13) {
         throw std::logic_error("unknown BINOP");
       }
-      fprintf(f, "BINOP\t%s", ops[l - 1]);
       break;
     }
 
     case 1:
       switch (l)
       {
-      case 0: {
+      case 0: { // CONST
         uint64_t n = INT;
-        fprintf(f, "CONST\t%d", n);
         break;
       }
 
-      case 1: {
+      case 1: { // STRING
         char *tag = STRING;
-        fprintf(f, "STRING\t%s", tag);
         break;
       }
 
-      case 2: {
+      case 2: { // SEXP
         char *tag = STRING;
         uint64_t n = INT;
-        fprintf(f, "SEXP\t%s ", tag);
-        fprintf(f, "%d", n);
         CHECK_NUMBER_IS_ADEQUATE(n);
         break;
       }
@@ -636,19 +627,16 @@ void check_file(FILE *f, bytefile *bf)
       case 3:
         throw std::logic_error("STI is temporary prohibited");
 
-      case 4:
-        fprintf(f, "STA");
+      case 4: // STA
         break;
 
-      case 5: {
+      case 5: { // JMP
         uint64_t addr = INT;
-        fprintf(f, "JMP\t0x%.8x", addr);
         CHECK_JMP_ADDR(addr);
         break;
       }
 
-      case 6:
-        fprintf(f, "END");
+      case 6: // END
         was_begin = false;
         for (auto addr : addrs_jump_in_function) {
           if (addr > current_addr) {
@@ -658,24 +646,19 @@ void check_file(FILE *f, bytefile *bf)
         addrs_jump_in_function.clear();
         break;
 
-      case 7:
-        fprintf(f, "RET");
+      case 7: // RET
         break;
 
-      case 8:
-        fprintf(f, "DROP");
+      case 8: // DROP
         break;
 
-      case 9:
-        fprintf(f, "DUP");
+      case 9: // DUP
         break;
 
-      case 10:
-        fprintf(f, "SWAP");
+      case 10: // SWAP
         break;
 
-      case 11:
-        fprintf(f, "ELEM");
+      case 11: // ELEM
         break;
 
       default:
@@ -683,28 +666,23 @@ void check_file(FILE *f, bytefile *bf)
       }
       break;
 // TODO: runtime A() + closure size + remove odd instrs
-    case 3:
+    case 3: // LDA
       throw std::logic_error("LDA is temporary prohibited");
-    case 2:
-    case 4: {
-      fprintf(f, "%s\t", lds[h - 2]);
+    case 2: // LD
+    case 4: { // ST
       uint64_t i = INT;
       switch (l)
       {
       case 0:
-        fprintf(f, "G(%d)", i);
         CHECK_GLOBAL(i);
         break;
       case 1:
-        fprintf(f, "L(%d)", i);
         CHECK_LOCALS(i);
         break;
       case 2:
-        fprintf(f, "A(%d)", i);
         CHECK_ARGS(i);
         break;
       case 3:
-        fprintf(f, "C(%d)", i);
         break;
       default:
         FAIL;
@@ -714,26 +692,22 @@ void check_file(FILE *f, bytefile *bf)
 
     case 5:
       switch (l)
-      {
+      { // CJMPz
       case 0: {
         uint64_t addr = INT;
-        fprintf(f, "CJMPz\t0x%.8x", addr);
         CHECK_JMP_ADDR(addr);
         break;
       }
 
-      case 1: {
+      case 1: { // CJMPnz
         uint64_t addr = INT;
-        fprintf(f, "CJMPnz\t0x%.8x", addr);
         CHECK_JMP_ADDR(addr);
         break;
       }
 
-      case 2: {
+      case 2: { // BEGIN
         uint64_t nargs = INT;
         uint64_t nlocals = INT;
-        fprintf(f, "BEGIN\t%d ", nargs);
-        fprintf(f, "%d", nlocals);
         was_begin = true;
         CHECK_ARGS_NUMBER(current_addr, nargs);
         if (is_main_begin && nargs != 2) {
@@ -746,11 +720,9 @@ void check_file(FILE *f, bytefile *bf)
         break;
       }
 
-      case 3: {
+      case 3: { // CBEGIN
         uint64_t nargs = INT;
         uint64_t nlocals = INT;
-        fprintf(f, "CBEGIN\t%d ", nargs);
-        fprintf(f, "%d", nlocals);
         was_begin = true;
         CHECK_ARGS_NUMBER((ip - bf->code_ptr - 1), nargs);
         addr_of_function_begin = current_addr;
@@ -760,9 +732,8 @@ void check_file(FILE *f, bytefile *bf)
         break;
       }
 
-      case 4: {
+      case 4: { // CLOSURE
         uint64_t addr = INT;
-        fprintf(f, "CLOSURE\t0x%.8x", addr);
         {
           int n = INT;
           CHECK_NUMBER_IS_ADEQUATE(n);
@@ -773,19 +744,15 @@ void check_file(FILE *f, bytefile *bf)
             switch (byte)
             {
             case 0:
-              fprintf(f, "G(%d)", number);
               CHECK_GLOBAL(number);
               break;
             case 1:
-              fprintf(f, "L(%d)", number);
               CHECK_LOCALS(number);
               break;
             case 2:
-              fprintf(f, "A(%d)", number);
               CHECK_ARGS(number);
               break;
             case 3:
-              fprintf(f, "C(%d)", number);
               break;
             default:
               FAIL;
@@ -802,16 +769,14 @@ void check_file(FILE *f, bytefile *bf)
         break;
       }
 
-      case 5: {
-        fprintf(f, "CALLC\t%d", INT);
+      case 5: { // CALLC
+        uint64_t n = INT;
         break;
       }
 
-      case 6: {
+      case 6: { // CALL
         uint64_t addr = INT;
         uint64_t arg_number = INT;
-        fprintf(f, "CALL\t0x%.8x ", addr);
-        fprintf(f, "%d", arg_number);
         CHECK_ARGS_NUMBER(addr, arg_number);
         if (addr <= current_addr) {
           if (function_begin_addrs.find(addr) == function_begin_addrs.end()) {
@@ -823,33 +788,27 @@ void check_file(FILE *f, bytefile *bf)
         break;
       }
 
-      case 7: {
+      case 7: { // TAG
         char *tag = STRING;
         uint64_t n = INT;
-        fprintf(f, "TAG\t%s ", tag);
-        fprintf(f, "%d", n);
         CHECK_NUMBER_IS_ADEQUATE(n);
         break;
       }
 
-      case 8: {
+      case 8: { // ARRAY
         uint64_t n = INT;
-        fprintf(f, "ARRAY\t%d", n);
         CHECK_NUMBER_IS_ADEQUATE(n);
         break;
       }
 
-      case 9: {
+      case 9: { // FAIL
         uint64_t line = INT;
         uint64_t column = INT;
-        fprintf(f, "FAIL\t%d", line);
-        fprintf(f, "%d", column);
         break;
       }
 
-      case 10: {
+      case 10: { // LINE
         uint64_t n = INT;
-        fprintf(f, "LINE\t%d", n);
         break;
       }
 
@@ -858,36 +817,30 @@ void check_file(FILE *f, bytefile *bf)
       }
       break;
 
-    case 6:
+    case 6: // PATT
       if (l >= 7) {
         throw std::logic_error("unsupported pattern for PATT");
       }
-      fprintf(f, "PATT\t%s", pats[l]);
       break;
 
     case 7:
     {
       switch (l)
       {
-      case 0:
-        fprintf(f, "CALL\tLread");
+      case 0: // Lread
         break;
 
-      case 1:
-        fprintf(f, "CALL\tLwrite");
+      case 1: // Lwrite
         break;
 
-      case 2:
-        fprintf(f, "CALL\tLlength");
+      case 2: // Llength
         break;
 
-      case 3:
-        fprintf(f, "CALL\tLstring");
+      case 3: // Lstring
         break;
 
-      case 4: {
+      case 4: { // Barray
         uint64_t n = INT;
-        fprintf(f, "CALL\tBarray\t%d", n);
         CHECK_NUMBER_IS_ADEQUATE(n);
         break;
       }
@@ -901,11 +854,9 @@ void check_file(FILE *f, bytefile *bf)
     default:
       FAIL;
     }
-
-    fprintf(f, "\n");
   } while (1);
 stop:
-  fprintf(f, "<end>\n");
+  return;
 }
 
 
