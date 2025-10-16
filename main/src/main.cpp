@@ -8,6 +8,7 @@
 #include <stdexcept>
 #include <stdint.h>
 #include <unordered_map>
+#include <unordered_set>
 extern "C" {
 #define _Noreturn [[noreturn]]
 #include "runtime/gc.h"
@@ -515,6 +516,7 @@ void check_unboxed(uint64_t n, const std::string &message) {
 #define CHECK_LOCALS(i) do { if ((i) >= locals) throw std::logic_error("invalid local dereference"); } while(0)
 #define CHECK_ARGS(i) do { if ((i) >= args) throw std::logic_error("invalid arg dereference"); } while(0)
 #define CHECK_GLOBAL(i) do { if ((i) >= globals) throw std::logic_error("invalid global dereference"); } while(0)
+#define CHECK_JMP_ADDR(addr) do { if (addr <= current_addr) { if (addr <= addr_of_function_begin) throw std::logic_error("invalid jump"); } else { addrs_jump_in_function.insert(addr); } } while (0)
 // TODO runtime check CLOSURE
 
 void check_file(FILE *f, bytefile *bf)
@@ -529,6 +531,8 @@ void check_file(FILE *f, bytefile *bf)
   uint64_t locals = 0;
   uint64_t args = 0;
   std::unordered_map<uint64_t, uint64_t> addr_to_args_number;
+  std::unordered_set<uint64_t> addrs_jump_in_function;
+  uint64_t addr_of_function_begin = 0;
 
   do
   {
@@ -536,7 +540,8 @@ void check_file(FILE *f, bytefile *bf)
          h = (x & 0xF0) >> 4,
          l = x & 0x0F;
 
-    fprintf(f, "0x%.8x:\t", ip - bf->code_ptr - 1);
+    uint64_t current_addr = ip - bf->code_ptr - 1;
+    fprintf(f, "0x%.8x:\t", current_addr);
     if (!was_begin && (h != 5 || l != 2)) {
       throw std::logic_error("should be BEGIN instruction");
     }
@@ -585,13 +590,22 @@ void check_file(FILE *f, bytefile *bf)
         fprintf(f, "STA");
         break;
 
-      case 5:
-        fprintf(f, "JMP\t0x%.8x", INT);
+      case 5: {
+        uint64_t addr = INT;
+        fprintf(f, "JMP\t0x%.8x", addr);
+        CHECK_JMP_ADDR(addr);
         break;
+      }
 
       case 6:
         fprintf(f, "END");
         was_begin = false;
+        for (auto addr : addrs_jump_in_function) {
+          if (addr > current_addr) {
+            throw std::logic_error("invalid jump");
+          }
+        }
+        addrs_jump_in_function.clear();
         break;
 
       case 7:
@@ -650,13 +664,19 @@ void check_file(FILE *f, bytefile *bf)
     case 5:
       switch (l)
       {
-      case 0:
-        fprintf(f, "CJMPz\t0x%.8x", INT);
+      case 0: {
+        uint64_t addr = INT;
+        fprintf(f, "CJMPz\t0x%.8x", addr);
+        CHECK_JMP_ADDR(addr);
         break;
+      }
 
-      case 1:
-        fprintf(f, "CJMPnz\t0x%.8x", INT);
+      case 1: {
+        uint64_t addr = INT;
+        fprintf(f, "CJMPnz\t0x%.8x", addr);
+        CHECK_JMP_ADDR(addr);
         break;
+      }
 
       case 2: {
         uint64_t nargs = INT;
@@ -664,10 +684,11 @@ void check_file(FILE *f, bytefile *bf)
         fprintf(f, "BEGIN\t%d ", nargs);
         fprintf(f, "%d", nlocals);
         was_begin = true;
-        CHECK_ARGS_NUMBER((ip - bf->code_ptr - 1), nargs);
+        CHECK_ARGS_NUMBER(current_addr, nargs);
         if (is_main_begin && nargs != 2) {
           throw std::logic_error("should be 2 args in main");
         }
+        addr_of_function_begin = current_addr;
         args = nargs;
         locals = nlocals;
         break;
@@ -680,6 +701,7 @@ void check_file(FILE *f, bytefile *bf)
         fprintf(f, "%d", nlocals);
         was_begin = true;
         CHECK_ARGS_NUMBER((ip - bf->code_ptr - 1), nargs);
+        addr_of_function_begin = current_addr;
         args = nargs;
         locals = nlocals;
         break;
