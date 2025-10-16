@@ -812,7 +812,7 @@ void run_interpreter(bytefile *bf, FILE *f = stderr)
             }
           }
         };
-        Bclosure(args, make_boxed(n));
+        push_operand(reinterpret_cast<uint64_t>(Bclosure(args, make_boxed(n))));
         break;
       }
 
@@ -821,7 +821,7 @@ void run_interpreter(bytefile *bf, FILE *f = stderr)
         debug(f, "CALLC\t%d", args_number);
         call_begin(args_number, ip);
         *closure_address = pop_operand();
-        ip = *closure_address + bf->code_ptr;
+        ip = *reinterpret_cast<uint64_t *>(*closure_address) + bf->code_ptr;
         break;
       }
 
