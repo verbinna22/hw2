@@ -603,7 +603,7 @@ void move_globals(uint64_t nglobals) {
 }
 
 uint64_t *get_global(uint64_t i) {
-  return (OPERAND_STACK_SIZE_BEGIN - i - 1);//file->global_ptr + i;
+  return (OPERAND_STACK_SIZE_BEGIN - i - 1); // file->global_ptr + i;
 }
 
 uint64_t pop_operand() {
@@ -649,7 +649,6 @@ void alloc_locals(uint64_t nlocals) {
 }
 
 uint64_t *get_local(uint64_t i) {
-  // debug(stderr, "\tget local:%li sp%x osb%x\n", *(sp - i - 1), sp, OPERAND_STACK_SIZE_BEGIN);
   return (sp - i - 1);
 }
 
@@ -676,27 +675,10 @@ uint64_t *get_arg(uint64_t i) {
 }
 
 uint64_t *get_closure(uint64_t i) {
-  debug(stderr, "\tget closure:%li\n", *(reinterpret_cast<uint64_t *>(*closure_address) + (i + 1)));
   return reinterpret_cast<uint64_t *>(*closure_address) + (i + 1); //  Value.Access i -> I (word_size * (i + 1), r15)
 }
 
 char *file_name;
-char *chars = "_abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789'";
-
-uint64_t hash_tag(char *tag) {
-  // method hash tag =
-  //     let h = Stdlib.ref 0 in
-  //     for i = 0 to min (String.length tag - 1) 9 do
-  //       h := (!h lsl 6) lor String.index chars tag.[i]
-  //     done;
-  uint64_t h = 0;
-  uint64_t length = std::min<uint64_t>(std::strlen(tag), 10);
-  for (int i = 0; i < length; ++i) {
-    uint64_t index = std::strchr(chars, tag[i]) - chars;
-    h = (h << 6) | index;
-  }
-  return h;
-}
 
 char *call_end() {
   char *result = reinterpret_cast<char *>(fp[0]);
@@ -718,7 +700,12 @@ uint64_t make_unboxed(int64_t n) {
   return n >> 1;
 }
 
-/* Disassembles the bytecode pool */
+void check_unboxed(uint64_t n, const std::string &message) {
+  if (!(n & 1)) {
+    throw std::logic_error(message);
+  }
+}
+
 void run_interpreter(bytefile *bf, FILE *f = stderr)
 {
 
@@ -735,43 +722,36 @@ void run_interpreter(bytefile *bf, FILE *f = stderr)
   __gc_stack_bottom = reinterpret_cast<size_t>(memory_to_simulation + sizeof(memory_to_simulation) / sizeof(memory_to_simulation[0]) - sizeof(void *));
   __gc_stack_top = (reinterpret_cast<size_t>(memory_to_simulation) - sizeof(void *)) & (~0xFull);
   move_globals(bf->global_area_size);
-  // begin simulation jump to main
   do
   {
+    // print_code(ip, bf);
     char x = BYTE,
          h = (x & 0xF0) >> 4,
          l = x & 0x0F;
 // TODO: no debug mode (gc), additional fun to print bc, check
     //dump_heap(); // TODO
-    debug(f, "0x%.8x (0x%.8x):\t", ip - bf->code_ptr - 1, ip - 1);
-    print_stacks();
+    // print_stacks();
 
     switch (h)
     {
-    case 15:
-      goto stop; // stop execution
-
+// TODO eliminate stop label, ops etc
     /* BINOP  must be valid*/
     case 0: {
-      debug(f, "BINOP\t%s", ops[l - 1]); // TODO
       uint64_t result;
       uint64_t first = make_unboxed(pop_operand());
       uint64_t second = make_unboxed(pop_operand());
-      debug(stderr, "%li %li %li\n", int64_t(second), int64_t(first), int64_t(second) > int64_t(first));
       switch (l) {
         case 1: result = second + first; break;
         case 2: result = second - first; break;
         case 3: result = int64_t(second) * int64_t(first); break;
         case 4:
           if (first == 0) {
-            debug(stderr, "Error: divide by zero");
-            return;
+            throw std::logic_error("divide by zero");
           }
           result = int64_t(second) / int64_t(first); break;
         case 5:
           if (first == 0) {
-            debug(stderr, "Error: divide by zero");
-            return;
+            throw std::logic_error("divide by zero");
           }
           result = int64_t(second) % int64_t(first); break;
         case 6: result = int64_t(second) < int64_t(first); break;
@@ -790,26 +770,22 @@ void run_interpreter(bytefile *bf, FILE *f = stderr)
     case 1:
       switch (l)
       {
-      case 0: {
+      case 0: { // CONST
         uint64_t n = INT;
-        debug(f, "CONST\t%d", n); // TODO
         push_operand(make_boxed(n));
         break;
       }
 
-      case 1: {
+      case 1: { // STRING
         uint64_t ptr = reinterpret_cast<uint64_t>(STRING);
-        debug(f, "STRING\t%s", ptr); // TODO
         uint64_t allocated_ptr = reinterpret_cast<uint64_t>(Bstring(reinterpret_cast<aint *>(&ptr)));
         push_operand(allocated_ptr);
         break;
       }
 
-      case 2: {
+      case 2: { // SEXP
         uint64_t ptr = reinterpret_cast<uint64_t>(STRING);
         uint64_t n = INT;
-        debug(f, "SEXP\t%s ", ptr);  // TODO
-        debug(f, "%d", n);
         aint tmp_array[n + 1];
         tmp_array[n] = LtagHash(reinterpret_cast<char *>(ptr));
         for (int i = n - 1; i >= 0; --i) {
@@ -822,10 +798,8 @@ void run_interpreter(bytefile *bf, FILE *f = stderr)
 
       case 3:
         throw std::logic_error("STI temporary prohibited");
-        break;
 
-      case 4: {
-        debug(f, "STA");  // TODO
+      case 4: { // STA
         uint64_t v = pop_operand();
         uint64_t i = pop_operand();
         uint64_t y = pop_operand();
@@ -833,38 +807,32 @@ void run_interpreter(bytefile *bf, FILE *f = stderr)
         break;
       }
 
-      case 5: {
+      case 5: { // JMP
         uint64_t addr = INT;
-        debug(f, "JMP\t0x%.8x", addr); // TODO
         ip = addr + bf->code_ptr;
         break;
       }
 
-      case 6:
-        debug(f, "END"); // TODO
+      case 6: // END
         ip = call_end();
         break;
 
-      case 7:
-        debug(f, "RET"); // TODO
+      case 7: // RET
         ip = call_end();
         break;
 
-      case 8:
-        debug(f, "DROP");  // TODO
+      case 8: // DROP
         pop_operand();
         break;
 
-      case 9: {
-        debug(f, "DUP");  // TODO
+      case 9: { // DUP
         uint64_t value = pop_operand();
         push_operand(value);
         push_operand(value);
         break;
       }
 
-      case 10: {
-        debug(f, "SWAP"); // TODO
+      case 10: { // SWAP
         uint64_t first = pop_operand();
         uint64_t second = pop_operand();
         push_operand(first);
@@ -872,45 +840,32 @@ void run_interpreter(bytefile *bf, FILE *f = stderr)
         break;
       }
 
-      case 11: {
-        debug(f, "ELEM"); // TODO
+      case 11: { // ELEM
         uint64_t i = pop_operand();
         uint64_t p = pop_operand();
         push_operand(reinterpret_cast<uint64_t>(Belem(reinterpret_cast<void *>(p), static_cast<aint>(i))));
         break;
       }
-
-      default:
-        FAIL; // TODO: another check
       }
       break;
 
     case 2: {// LD
-      debug(f, "%s\t", lds[h - 2]);
       uint64_t variable;
       uint64_t i = INT;
       switch (l)
       {
       case 0:
-        debug(f, "G(%d)", i);
         variable = *get_global(i);
-        debug(stderr, "%li\t", variable);
         break;
       case 1:
-        debug(f, "L(%d)", i);
         variable = *get_local(i);
-        debug(stderr, "%li\t", variable);
         break;
       case 2:
-        debug(f, "A(%d)", i);
         variable = *get_arg(i);
         break;
       case 3:
-        debug(f, "C(%d)", i);
         variable = *get_closure(i);
         break;
-      default:
-        FAIL;
       }
       push_operand(variable);
       break;
@@ -918,42 +873,27 @@ void run_interpreter(bytefile *bf, FILE *f = stderr)
     case 3: // LDA
       throw std::logic_error("LDA temporary prohibited");
     case 4: {// ST
-      debug(f, "%s\t", lds[h - 2]); // TODO
       uint64_t i = INT;
+      uint64_t value = pop_operand();
+      push_operand(value);
       switch (l)
       {
       case 0: {
-        debug(f, "G(%d)", i);
-        uint64_t value = pop_operand();
-        push_operand(value);
-        debug(stderr, "%li\t", value);
         *get_global(i) = value;
         break;
       }
       case 1: {
-        debug(f, "L(%d)", i);
-        uint64_t value = pop_operand();
-        push_operand(value);
-        debug(stderr, "%li\t", value);
         *get_local(i) = value;
         break;
       }
       case 2: {
-        debug(f, "A(%d)", i);
-        uint64_t value = pop_operand();
-        push_operand(value);
         *get_arg(i) = value;
         break;
       }
       case 3: {
-        debug(f, "C(%d)", i);
-        uint64_t value = pop_operand();
-        push_operand(value);
         *get_closure(i) = value;
         break;
       }
-      default:
-        FAIL;
       }
       break;
     }
@@ -961,9 +901,8 @@ void run_interpreter(bytefile *bf, FILE *f = stderr)
     case 5:
       switch (l)
       {
-      case 0: {
+      case 0: { // CJMPz
         uint64_t addr = INT;
-        debug(f, "CJMPz\t0x%.8x", addr); // TODO
         uint64_t value = make_unboxed(pop_operand());
         if (value == 0) {
           ip = addr + bf->code_ptr;
@@ -971,38 +910,31 @@ void run_interpreter(bytefile *bf, FILE *f = stderr)
         break;
       }
 
-      case 1: {
+      case 1: { // CJMPnz
         uint64_t addr = INT;
-        debug(f, "CJMPnz\t0x%.8x", addr); // TODO
         uint64_t value = make_unboxed(pop_operand());
-        debug(stderr, "%li\n", int64_t(value));
         if (value != 0) {
           ip = addr + bf->code_ptr;
         }
         break;
       }
 
-      case 2: {
+      case 2: { // BEGIN
         uint64_t nargs = INT;
         uint64_t nlocals = INT;
-        debug(f, "BEGIN\t%d ", nargs); // TODO
-        debug(f, "%d", nlocals);
         alloc_locals(nlocals);
         break;
       }
 
-      case 3: {
+      case 3: { // CBEGIN
         uint64_t nargs = INT;
         uint64_t nlocals = INT;
-        debug(f, "CBEGIN\t%d ", nargs);
-        debug(f, "%d", nlocals);
         alloc_locals(nlocals);
         break;
       }
 
-      case 4: {
+      case 4: { // CLOSURE
         uint64_t addr = INT;
-        debug(f, "CLOSURE\t0x%.8x", addr); // TODO
           int n = INT;
           aint args[n + 1];
           {
@@ -1035,8 +967,6 @@ void run_interpreter(bytefile *bf, FILE *f = stderr)
               args[i + 1] = *get_closure(j);
               break;
             }
-            default:
-              FAIL;
             }
           }
         };
@@ -1044,30 +974,25 @@ void run_interpreter(bytefile *bf, FILE *f = stderr)
         break;
       }
 
-      case 5: {
+      case 5: { // CALLC
         uint64_t args_number = INT;
-        debug(f, "CALLC\t%d", args_number);
         call_begin(args_number, ip);
         *closure_address = pop_operand();
         ip = *reinterpret_cast<uint64_t *>(*closure_address) + bf->code_ptr;
         break;
       }
 
-      case 6: {
+      case 6: { // CALL
         uint64_t addr = INT;
         uint64_t args_number = INT;
-        debug(f, "CALL\t0x%.8x ", addr); // TODO
-        debug(f, "%d", args_number);
         call_begin(args_number, ip);
         ip = addr + bf->code_ptr;
         break;
       }
 
-      case 7: {
+      case 7: { // TAG
         uint64_t string_ptr = reinterpret_cast<uint64_t>(STRING);
         uint64_t size = INT;
-        debug(f, "TAG\t%s ", string_ptr);
-        debug(f, "%d", size); // TODO
         uint64_t data = pop_operand();
         uint64_t value = Btag(
           reinterpret_cast<char *>(data), LtagHash(reinterpret_cast<char *>(string_ptr)), make_boxed(size));
@@ -1075,41 +1000,33 @@ void run_interpreter(bytefile *bf, FILE *f = stderr)
         break;
       }
 
-      case 8: {
+      case 8: { // ARRAY
         uint64_t size = INT;
-        debug(f, "ARRAY\t%d", size); // TODO
         uint64_t data = pop_operand();
         uint64_t value = Barray_patt(reinterpret_cast<void *>(data), make_boxed(size));
         push_operand(value);
         break;
       }
 
-      case 9: {
+      case 9: { // FAIL
         uint64_t line = INT;
         uint64_t column = INT;
-        debug(f, "FAIL\t%d", line);
-        debug(f, "%d", column);
         uint64_t data = pop_operand();
-        push_operand(data); // TODO eliminate
+        push_operand(data);
         Bmatch_failure(reinterpret_cast<void *>(data), file_name, line, column);
         break;
       }
 
-      case 10: {
+      case 10: { // LINE
         uint64_t n = INT;
-        debug(f, "LINE\t%d", n);
         break;
       }
-
-      default:
-        FAIL; // TODO remove
       }
       break;
 
-    case 6: {
-      debug(f, "PATT\t%s", pats[l]);
+    case 6: { // PATT
       switch (l) {
-        case 0: {// strcmp
+        case 0: { // strcmp
           void *first = reinterpret_cast<void *>(pop_operand());
           void *second = reinterpret_cast<void *>(pop_operand());
           push_operand(Bstring_patt(first, second));
@@ -1138,36 +1055,34 @@ void run_interpreter(bytefile *bf, FILE *f = stderr)
     }
 
     case 7:
-    { // TODO
-      switch (l)
+    {
+      switch (l) // Lread
       {
       case 0:
-        debug(f, "CALL\tLread");
         fprintf(stdout, " ");
         push_operand(Lread());
         break;
 
-      case 1:
-        debug(f, "CALL\tLwrite");
-        Lwrite(pop_operand());
+      case 1: {// Lwrite
+        uint64_t value = pop_operand();
+        check_unboxed(value, "Lwrite accept only numbers");
+        Lwrite(value);
         push_operand(0);
         break;
+      }
 
-      case 2:
-        debug(f, "CALL\tLlength");
+      case 2: // Llength
         push_operand(Llength(reinterpret_cast<void *>(pop_operand())));
         break;
 
-      case 3: {
-        debug(f, "CALL\tLstring");
+      case 3: { // Lstring
         uint64_t value = pop_operand();
         push_operand(reinterpret_cast<uint64_t>(Lstring(reinterpret_cast<aint *>(&value))));
         break;
       }
 
-      case 4: {
+      case 4: { // Barray
         uint64_t n = INT;
-        debug(f, "CALL\tBarray\t%d", n);
         aint args[n];
         for (int i = n - 1; i >= 0; --i) {
           args[i] = pop_operand();
@@ -1175,21 +1090,11 @@ void run_interpreter(bytefile *bf, FILE *f = stderr)
         push_operand(reinterpret_cast<uint64_t>(Barray(args, make_boxed(n))));
         break;
       }
-
-      default:
-        FAIL; // TODO
       }
     }
     break;
-
-    default:
-      FAIL; // TODO
     }
-
-    debug(f, "\n");
   } while (sp != nullptr);
-stop:
-  debug(f, "<end>\n");
   __shutdown();
 }
 
@@ -1220,7 +1125,7 @@ void dump_file(FILE *f, bytefile *bf)
     fprintf(stderr, "No main");
     return;
   }
-  run_interpreter(bf);
+  
 }
 
 int main(int argc, char *argv[])
@@ -1229,5 +1134,6 @@ int main(int argc, char *argv[])
   bytefile *f = read_file(file_name);
   file = f;
   dump_file(stderr, f);
+  run_interpreter(f);
   return 0;
 }
