@@ -389,7 +389,7 @@ uint64_t *fp = CALL_STACK_SIZE_BEGIN + 2;
 uint64_t *sp = CALL_STACK_SIZE_BEGIN + 2 + 4;
 
 bytefile *file;
-uint main_ptr;
+uint64_t main_ptr;
 
 uint64_t *closure_address = memory_to_simulation;
 
@@ -552,16 +552,18 @@ void check_file(FILE *f, bytefile *bf)
 
   do
   {
+    //print_code(ip, bf);
     char x = BYTE,
          h = (x & 0xF0) >> 4,
          l = x & 0x0F;
 
     uint64_t current_addr = ip - bf->code_ptr - 1;
-    if (!was_begin && (h != 5 || l != 2)) {
+    if (!was_begin && (h != 5 || l != 2) && h != 15) {
       throw std::logic_error("should be BEGIN instruction");
     }
-    bool is_main_begin = ip - 1 == main_ptr + bf->code_ptr;
-    if (is_main_begin && h != 5 || l != 2) {
+    bool is_main_begin = current_addr == main_ptr;
+    // fprintf(stderr, "ca %lu mp %lu\n", current_addr, main_ptr);//
+    if (is_main_begin && (h != 5 || l != 2)) {
       throw std::logic_error("main should point to BEGIN");
     }
     if (forward_calls.find(current_addr) != forward_calls.end()) {
