@@ -550,7 +550,7 @@ void check_file(FILE *f = stderr)
 
   do
   {
-    //print_code(ip, file);
+    // print_code(ip);
     char x = BYTE,
          h = (x & 0xF0) >> 4,
          l = x & 0x0F;
@@ -560,7 +560,6 @@ void check_file(FILE *f = stderr)
       throw std::logic_error("should be BEGIN instruction");
     }
     bool is_main_begin = current_addr == main_ptr;
-    // fprintf(stderr, "ca %lu mp %lu\n", current_addr, main_ptr);//
     if (is_main_begin && (h != 5 || l != 2)) {
       throw std::logic_error("main should point to BEGIN");
     }
@@ -573,7 +572,7 @@ void check_file(FILE *f = stderr)
     }
     if (forward_ccalls.find(current_addr) != forward_ccalls.end()) {
       if (h != 5 || l != 3 && l != 2) {
-        throw std::logic_error("CLOSURE must refer to CBEGIN");
+        throw std::logic_error("CLOSURE must refer to BEGIN");
       } else {
         forward_ccalls.erase(forward_ccalls.find(current_addr));
       }
@@ -763,14 +762,14 @@ void check_file(FILE *f = stderr)
         };
         if (addr <= current_addr) {
           if (closure_begin_addrs.find(current_addr) == closure_begin_addrs.end()) {
-            throw std::logic_error("CLOSURE must correspond CBEGIN");
+            throw std::logic_error("CLOSURE must correspond BEGIN");
           }
         } else {
           forward_ccalls.insert(addr);
         }
         break;
       }
-// TODO call/callc
+
       case 5: { // CALLC
         uint64_t n = INT;
         break;
