@@ -374,7 +374,6 @@ void print_code(char *ip, bytefile *bf, FILE *f = stderr)
     fprintf(f, "\n");
 }
 
-#define debug(...) //fprintf(__VA_ARGS__)
 constexpr uint64_t OPERAND_STACK_SIZE_U = 1024 * 1024;
 constexpr uint64_t CALL_STACK_SIZE_U = 1024 * 1024;
 
@@ -406,7 +405,7 @@ uint64_t *get_global(uint64_t i) {
 
 uint64_t pop_operand() {
   if (operand_stack_end == OPERAND_STACK_SIZE_BEGIN) {
-    throw std::logic_error("op stack underflow"); // TODO overflow
+    throw std::logic_error("op stack underflow");
   }
   --operand_stack_end;
   uint64_t result = *operand_stack_end;
@@ -418,11 +417,14 @@ void push_operand(uint64_t operand) {
   *operand_stack_end = operand;
   ++operand_stack_end; 
   if (operand_stack_end >= OPERAND_STACK_SIZE_END) {
-    throw std::logic_error("op stack overflow"); // TODO overflow
+    throw std::logic_error("op stack overflow");
   }
 }
 
 void call_begin(uint64_t nargs, char *next) {
+  if (sp + nargs + 4 >= CALL_STACK_SIZE_END) {
+    throw std::logic_error("call stack overflow");
+  }
   for (int i = 0; i < nargs; ++i) {
     sp[i] = pop_operand();
   }
@@ -433,16 +435,12 @@ void call_begin(uint64_t nargs, char *next) {
   *closure_address = 0;
   fp = &sp[nargs];
   sp += (nargs + 4);
-  if (sp >= CALL_STACK_SIZE_END) {
-    throw std::logic_error("call stack overflow"); // TODO overflow
-  }
 }
 
 void alloc_locals(uint64_t nlocals) {
   sp += nlocals;
-  debug(stderr, "\nalloc locals:\t%lu\n", nlocals);
   if (sp >= CALL_STACK_SIZE_END) {
-    throw std::logic_error("call stack overflow"); // TODO overflow
+    throw std::logic_error("call stack overflow");
   }
 }
 
@@ -451,21 +449,21 @@ uint64_t *get_local(uint64_t i) {
 }
 
 void print_stacks() { // TODO
-  debug(stderr, "\n\nstack:");
+  fprintf(stderr, "\n\nstack:");
   for (uint64_t *i = operand_stack_end - 1; i >= OPERAND_STACK_SIZE_BEGIN; --i) {
-    debug(stderr, " %li ", *i);
+    fprintf(stderr, " %li ", *i);
   }
 
-  debug(stderr, "\n\ngloba + clos:");
+  fprintf(stderr, "\n\ngloba + clos:");
   for (uint64_t *i = OPERAND_STACK_SIZE_BEGIN - 1; i >= memory_to_simulation; --i) {
-    debug(stderr, " %li ", *i);
+    fprintf(stderr, " %li ", *i);
   }
 
-  debug(stderr, "\n\ncall stack:");
+  fprintf(stderr, "\n\ncall stack:");
   for (uint64_t *i = sp - 1; i >= CALL_STACK_SIZE_BEGIN; --i) {
-    debug(stderr, " %li (%lx) ", *i, *i);
+    fprintf(stderr, " %li (%lx) ", *i, *i);
   }
-  debug(stderr, "\n\n");
+  fprintf(stderr, "\n\n");
 }
 
 uint64_t *get_arg(uint64_t i) {
@@ -1104,25 +1102,21 @@ void run_interpreter(bytefile *bf, FILE *f = stderr)
             {
             case 0: {
               uint64_t j = INT;
-              debug(f, "G(%d)", j);
               args[i + 1] = *get_global(j);
               break;
             }
             case 1: {
               uint64_t j = INT;
-              debug(f, "L(%d)", j);
               args[i + 1] = *get_local(j);
               break;
             }
             case 2: {
               uint64_t j = INT;
-              debug(f, "A(%d)", j);
               args[i + 1] = *get_arg(j);
               break;
             }
             case 3: {
               uint64_t j = INT;
-              debug(f, "C(%d)", j);
               args[i + 1] = *get_closure(j);
               break;
             }
