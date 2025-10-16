@@ -537,6 +537,8 @@ void check_file(FILE *f, bytefile *bf)
   std::unordered_set<uint64_t> addrs_jump_in_function;
   std::unordered_set<uint64_t> function_begin_addrs;
   std::unordered_set<uint64_t> forward_calls;
+  std::unordered_set<uint64_t> closure_begin_addrs;
+  std::unordered_set<uint64_t> forward_ccalls;
   uint64_t addr_of_function_begin = 0;
 
   do
@@ -561,6 +563,13 @@ void check_file(FILE *f, bytefile *bf)
         forward_calls.erase(forward_calls.find(current_addr));
       }
     }
+    if (forward_ccalls.find(current_addr) != forward_ccalls.end()) {
+      if (h != 5 || l != 3) {
+        throw std::logic_error("CLOSURE must refer to CBEGIN");
+      } else {
+        forward_ccalls.erase(forward_ccalls.find(current_addr));
+      }
+    }
 
     switch (h)
     {
@@ -573,6 +582,9 @@ void check_file(FILE *f, bytefile *bf)
       }
       if (!forward_calls.empty()) {
         throw std::logic_error("unresolved calls was found");
+      }
+      if (!forward_ccalls.empty()) {
+        throw std::logic_error("unresolved closures was found");
       }
       goto stop;
 
@@ -726,6 +738,7 @@ void check_file(FILE *f, bytefile *bf)
         was_begin = true;
         CHECK_ARGS_NUMBER((ip - bf->code_ptr - 1), nargs);
         addr_of_function_begin = current_addr;
+        closure_begin_addrs.insert(addr_of_function_begin);
         args = nargs;
         locals = nlocals;
         break;
@@ -763,6 +776,13 @@ void check_file(FILE *f, bytefile *bf)
             }
           }
         };
+        if (addr <= current_addr) {
+          if (closure_begin_addrs.find(current_addr) == closure_begin_addrs.end()) {
+            throw std::logic_error("CLOSURE must correspond CBEGIN");
+          }
+        } else {
+          forward_ccalls.insert(current_addr);
+        }
         break;
       }
 
