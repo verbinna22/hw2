@@ -1098,42 +1098,43 @@ void run_interpreter(bytefile *bf, FILE *f = stderr)
   __shutdown();
 }
 
-/* Dumps the contents of the file */
-void dump_file(FILE *f, bytefile *bf)
+void find_main()
 {
-  int i;
-
-  debug(f, "String table size       : %d\n", bf->stringtab_size);
-  debug(f, "Global area size        : %d\n", bf->global_area_size);
-  debug(f, "Number of public symbols: %d\n", bf->public_symbols_number);
-  debug(f, "Public symbols          :\n");
-
   bool found = false;
-  for (i = 0; i < bf->public_symbols_number; i++) {
-    char *name =  get_public_name(bf, i);
-    uint64_t offset = get_public_offset(bf, i);
-    debug(f, "   0x%.8x: %s\n", offset, name);
+  for (int i = 0; i < file->public_symbols_number; i++) {
+    const char *name =  get_public_name(file, i);
+    uint64_t offset = get_public_offset(file, i);
     if (std::strcmp(name, "main") == 0) {
       main_ptr = (offset);
       found = true;
       break;
     }
   }
-
-  debug(f, "Code:\n");
   if (!found) {
-    fprintf(stderr, "No main");
-    return;
+    throw std::logic_error("file doesn't contain main function");
   }
-  
 }
 
 int main(int argc, char *argv[])
 {
+  if (argc != 2) {
+    fprintf(stderr, "Error: should be 1 argument *.bc file!\n");
+    std::exit(1);
+  }
   file_name = argv[1];
   bytefile *f = read_file(file_name);
   file = f;
-  dump_file(stderr, f);
-  run_interpreter(f);
+  try {
+    find_main();
+  } catch (std::logic_error &e) {
+    fprintf(stderr, "Error in bytecode: %s!\n", e.what());
+    std::exit(1);
+  }
+  try {
+    run_interpreter(f);
+  } catch (std::logic_error &e) {
+    fprintf(stderr, "Error: %s!\n", e.what());
+    std::exit(1);
+  }
   return 0;
 }
