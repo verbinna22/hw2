@@ -352,7 +352,7 @@ stop:
   fprintf(f, "<end>\n");
 }
 
-#define debug(...) fprintf(__VA_ARGS__)
+#define debug(...) //fprintf(__VA_ARGS__)
 constexpr uint64_t OPERAND_STACK_SIZE_U = 1024 * 1024;
 constexpr uint64_t CALL_STACK_SIZE_U = 1024 * 1024;
 
