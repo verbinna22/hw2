@@ -352,7 +352,7 @@ stop:
   fprintf(f, "<end>\n");
 }
 
-#define debug(...) //fprintf(__VA_ARGS__)
+#define debug(...) fprintf(__VA_ARGS__)
 constexpr uint64_t OPERAND_STACK_SIZE_U = 1024 * 1024;
 constexpr uint64_t CALL_STACK_SIZE_U = 1024 * 1024;
 
@@ -364,10 +364,12 @@ constexpr uint64_t *CALL_STACK_SIZE_BEGIN = memory_to_simulation + 1 + OPERAND_S
 constexpr uint64_t *CALL_STACK_SIZE_END = memory_to_simulation + 1 + OPERAND_STACK_SIZE_U + CALL_STACK_SIZE_U;
 uint64_t *operand_stack_end = OPERAND_STACK_SIZE_BEGIN;
 uint64_t *fp = CALL_STACK_SIZE_BEGIN + 2;
-uint64_t *sp = CALL_STACK_SIZE_BEGIN + 5;
+uint64_t *sp = CALL_STACK_SIZE_BEGIN + 2 + 4;
 
 bytefile *file;
 uint main_ptr;
+
+uint64_t *closure_address = memory_to_simulation;
 
 void move_globals(uint64_t nglobals) {
   OPERAND_STACK_SIZE_BEGIN += nglobals;
@@ -405,8 +407,10 @@ void call_begin(uint64_t nargs, char *next) {
   sp[nargs] = reinterpret_cast<uint64_t>(next);
   sp[nargs + 1] = reinterpret_cast<uint64_t>(sp);
   sp[nargs + 2] = reinterpret_cast<uint64_t>(fp);
+  sp[nargs + 3] = *closure_address;
+  *closure_address = 0;
   fp = &sp[nargs];
-  sp += (nargs + 3);
+  sp += (nargs + 4);
   if (sp >= CALL_STACK_SIZE_END) {
     throw std::logic_error("call stack overflow"); // TODO overflow
   }
@@ -421,7 +425,7 @@ void alloc_locals(uint64_t nlocals) {
 }
 
 uint64_t *get_local(uint64_t i) {
-  debug(stderr, "\tget local:%li sp%x osb%x\n", *(sp - i - 1), sp, OPERAND_STACK_SIZE_BEGIN);
+  // debug(stderr, "\tget local:%li sp%x osb%x\n", *(sp - i - 1), sp, OPERAND_STACK_SIZE_BEGIN);
   return (sp - i - 1);
 }
 
@@ -447,9 +451,8 @@ uint64_t *get_arg(uint64_t i) {
   return (fp - i - 1);
 }
 
-uint64_t *closure_address = memory_to_simulation;
-
 uint64_t *get_closure(uint64_t i) {
+  debug(stderr, "\tget closure:%li\n", *(reinterpret_cast<uint64_t *>(*closure_address) + (i + 1)));
   return reinterpret_cast<uint64_t *>(*closure_address) + (i + 1); //  Value.Access i -> I (word_size * (i + 1), r15)
 }
 
@@ -474,6 +477,7 @@ uint64_t hash_tag(char *tag) {
 char *call_end() {
   char *result = reinterpret_cast<char *>(fp[0]);
   uint64_t *need_sp = reinterpret_cast<uint64_t *>(fp[1]);
+  *closure_address = fp[3];
   fp = reinterpret_cast<uint64_t *>(fp[2]);
   while (sp > need_sp) {
     --sp;
