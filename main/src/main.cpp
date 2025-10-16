@@ -448,7 +448,7 @@ uint64_t *get_local(uint64_t i) {
   return (sp - i - 1);
 }
 
-void print_stacks() { // TODO
+void print_stacks() {
   fprintf(stderr, "\n\nstack:");
   for (uint64_t *i = operand_stack_end - 1; i >= OPERAND_STACK_SIZE_BEGIN; --i) {
     fprintf(stderr, " %li ", *i);
@@ -1131,10 +1131,13 @@ void run_interpreter(bytefile *bf, FILE *f = stderr)
         uint64_t args_number = INT;
         call_begin(args_number, ip);
         *closure_address = pop_operand();
+        if (!Bclosure_tag_patt(reinterpret_cast<void *>(*closure_address)) || LEN(TO_DATA((*closure_address))) - 1 != args_number) {
+          throw std::logic_error("closure with correct argument numbers expected");
+        }
         ip = *reinterpret_cast<uint64_t *>(*closure_address) + bf->code_ptr;
         break;
       }
-
+// TODO: CBEGIN CALLC nargs
       case 6: { // CALL
         uint64_t addr = INT;
         uint64_t args_number = INT;
