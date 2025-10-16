@@ -58,10 +58,18 @@ typedef struct
   char buffer[0];
 } bytefile;
 
+size_t bytefile_size;
+
 /* Gets a string from a string table by an index */
 char *get_string(bytefile *f, int pos)
 {
-  return &f->string_ptr[pos];
+  char *string = &f->string_ptr[pos];
+  char *tmp = string;
+  while (tmp < (char *)f + bytefile_size && *tmp != 0) ++tmp;
+  if (tmp == (char *)f + bytefile_size) {
+    throw std::logic_error("string is not in file");
+  }
+  return string;
 }
 
 /* Gets a name for a public symbol */
@@ -93,7 +101,8 @@ bytefile *read_file(char *fname)
     failure("%s\n", strerror(errno));
   }
 
-  file = (bytefile *)malloc(sizeof(void *) * 4 + (size = ftell(f)));
+  bytefile_size = sizeof(void *) * 4 + (size = ftell(f));
+  file = (bytefile *)malloc(bytefile_size);
 
   if (file == 0)
   {
@@ -112,24 +121,30 @@ bytefile *read_file(char *fname)
   file->string_ptr = &file->buffer[file->public_symbols_number * 2 * sizeof(int)];
   file->public_ptr = (int *)file->buffer;
   file->code_ptr = &file->string_ptr[file->stringtab_size];
-  file->global_ptr = (int *)malloc(file->global_area_size * sizeof(int));
+  file->global_ptr = nullptr;
 
+  if (file->string_ptr >= (char *)file + bytefile_size ||
+    (char *)file->public_ptr >= (char *)file + bytefile_size ||
+    file->code_ptr >= (char *)file + bytefile_size ||
+    file->string_ptr + file->stringtab_size > (char *)file + bytefile_size
+  ) {
+    throw std::logic_error("bad file format");
+  }
   return file;
 }
-
-/* Disassembles the bytecode pool */
-void disassemble(FILE *f, bytefile *bf)
-{
 
 #define INT (ip += sizeof(int), *(int *)(ip - sizeof(int)))
 #define BYTE *ip++
 #define STRING get_string(bf, INT)
 #define FAIL failure("ERROR: invalid opcode %d-%d\n", h, l)
 
+void check_file(FILE *f, bytefile *bf)
+{
   char *ip = bf->code_ptr;
   char *ops[] = {"+", "-", "*", "/", "%", "<", "<=", ">", ">=", "==", "!=", "&&", "!!"};
   char *pats[] = {"=str", "#string", "#array", "#sexp", "#ref", "#val", "#fun"};
   char *lds[] = {"LD", "LDA", "ST"};
+  bool was_begin = false;
   do
   {
     char x = BYTE,
