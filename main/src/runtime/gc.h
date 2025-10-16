@@ -20,7 +20,7 @@
 
 #ifndef __LAMA_GC__
 #define __LAMA_GC__
-
+#define __builtin_frame_address(...) 0 // hack: gc must think, that my stack is correct
 #include "runtime_common.h"
 
 #define GET_MARK_BIT(x) (((ptrt)(x)) & 1)

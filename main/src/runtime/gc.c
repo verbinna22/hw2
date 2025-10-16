@@ -669,6 +669,7 @@ void dump_heap () {
     void     *content_ptr = get_object_content_ptr(header_ptr);
     data     *d           = TO_DATA(content_ptr);
     lama_type t           = get_type_header_ptr(header_ptr);
+    fprintf(stderr, "--- %lx %lx %lx ---", header_ptr, content_ptr, d); // print pointers
     switch (t) {
       case ARRAY: fprintf(stderr, "of kind ARRAY\n"); break;
       case CLOSURE: fprintf(stderr, "of kind CLOSURE\n"); break;
