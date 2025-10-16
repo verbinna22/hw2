@@ -601,9 +601,13 @@ void check_file(FILE *f, bytefile *bf)
       goto stop;
 
     /* BINOP */
-    case 0:
+    case 0: {
+      if (l < 1 || l > 13) {
+        throw std::logic_error("unknown BINOP");
+      }
       fprintf(f, "BINOP\t%s", ops[l - 1]);
       break;
+    }
 
     case 1:
       switch (l)
