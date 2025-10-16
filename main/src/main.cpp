@@ -517,7 +517,10 @@ void check_unboxed(uint64_t n, const std::string &message) {
 #define CHECK_ARGS(i) do { if ((i) >= args) throw std::logic_error("invalid arg dereference"); } while(0)
 #define CHECK_GLOBAL(i) do { if ((i) >= globals) throw std::logic_error("invalid global dereference"); } while(0)
 #define CHECK_JMP_ADDR(addr) do { if (addr <= current_addr) { if (addr <= addr_of_function_begin) throw std::logic_error("invalid jump"); } else { addrs_jump_in_function.insert(addr); } } while (0)
+#define CHECK_NUMBER_IS_ADEQUATE(n) do { if (n > 256) throw std::logic_error("inadequate constant"); } while (0)
 // TODO runtime check CLOSURE
+// TODO alignment
+// TODO uint elim
 
 void check_file(FILE *f, bytefile *bf)
 {
@@ -711,6 +714,7 @@ void check_file(FILE *f, bytefile *bf)
         fprintf(f, "CLOSURE\t0x%.8x", INT);
         {
           int n = INT;
+          CHECK_NUMBER_IS_ADEQUATE(n);
           for (int i = 0; i < n; i++)
           {
             uint64_t byte = BYTE;
@@ -753,23 +757,35 @@ void check_file(FILE *f, bytefile *bf)
         break;
       }
 
-      case 7:
-        fprintf(f, "TAG\t%s ", STRING);
-        fprintf(f, "%d", INT);
+      case 7: {
+        char *tag = STRING;
+        uint64_t n = INT;
+        fprintf(f, "TAG\t%s ", tag);
+        fprintf(f, "%d", n);
+        CHECK_NUMBER_IS_ADEQUATE(n);
         break;
+      }
 
-      case 8:
-        fprintf(f, "ARRAY\t%d", INT);
+      case 8: {
+        uint64_t n = INT;
+        fprintf(f, "ARRAY\t%d", n);
+        CHECK_NUMBER_IS_ADEQUATE(n);
         break;
+      }
 
-      case 9:
-        fprintf(f, "FAIL\t%d", INT);
-        fprintf(f, "%d", INT);
+      case 9: {
+        uint64_t line = INT;
+        uint64_t column = INT;
+        fprintf(f, "FAIL\t%d", line);
+        fprintf(f, "%d", column);
         break;
+      }
 
-      case 10:
-        fprintf(f, "LINE\t%d", INT);
+      case 10: {
+        uint64_t n = INT;
+        fprintf(f, "LINE\t%d", n);
         break;
+      }
 
       default:
         FAIL;
@@ -800,9 +816,12 @@ void check_file(FILE *f, bytefile *bf)
         fprintf(f, "CALL\tLstring");
         break;
 
-      case 4:
-        fprintf(f, "CALL\tBarray\t%d", INT);
+      case 4: {
+        uint64_t n = INT;
+        fprintf(f, "CALL\tBarray\t%d", n);
+        CHECK_NUMBER_IS_ADEQUATE(n);
         break;
+      }
 
       default:
         FAIL;
