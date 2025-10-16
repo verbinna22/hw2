@@ -472,6 +472,9 @@ uint64_t *get_arg(uint64_t i) {
 }
 
 uint64_t *get_closure(uint64_t i) {
+  if (i >= LEN(TO_DATA((*closure_address))) - 1) {
+    throw std::logic_error("bad access to closure");
+  }
   return reinterpret_cast<uint64_t *>(*closure_address) + (i + 1); //  Value.Access i -> I (word_size * (i + 1), r15)
 }
 
@@ -666,7 +669,7 @@ void check_file(FILE *f, bytefile *bf)
         FAIL;
       }
       break;
-// TODO: runtime A() + closure size + remove odd instrs
+// TODO: remove odd instrs
     case 3: // LDA
       throw std::logic_error("LDA is temporary prohibited");
     case 2: // LD
