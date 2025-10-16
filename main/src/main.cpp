@@ -535,6 +535,8 @@ void check_file(FILE *f, bytefile *bf)
   uint64_t args = 0;
   std::unordered_map<uint64_t, uint64_t> addr_to_args_number;
   std::unordered_set<uint64_t> addrs_jump_in_function;
+  std::unordered_set<uint64_t> function_begin_addrs;
+  std::unordered_set<uint64_t> forward_calls;
   uint64_t addr_of_function_begin = 0;
 
   do
@@ -552,6 +554,13 @@ void check_file(FILE *f, bytefile *bf)
     if (is_main_begin && h != 5 || l != 2) {
       throw std::logic_error("main should point to BEGIN");
     }
+    if (forward_calls.find(current_addr) != forward_calls.end()) {
+      if (h != 5 || l != 2) {
+        throw std::logic_error("CALL must refer to BEGIN");
+      } else {
+        forward_calls.erase(forward_calls.find(current_addr));
+      }
+    }
 
     switch (h)
     {
@@ -561,6 +570,9 @@ void check_file(FILE *f, bytefile *bf)
       }
       if (main_ptr + bf->code_ptr >= ip) {
         throw std::logic_error("main points outside the code");
+      }
+      if (!forward_calls.empty()) {
+        throw std::logic_error("unresolved calls was found");
       }
       goto stop;
 
@@ -700,6 +712,7 @@ void check_file(FILE *f, bytefile *bf)
           throw std::logic_error("should be 2 args in main");
         }
         addr_of_function_begin = current_addr;
+        function_begin_addrs.insert(addr_of_function_begin);
         args = nargs;
         locals = nlocals;
         break;
@@ -764,6 +777,13 @@ void check_file(FILE *f, bytefile *bf)
         fprintf(f, "CALL\t0x%.8x ", addr);
         fprintf(f, "%d", arg_number);
         CHECK_ARGS_NUMBER(addr, arg_number);
+        if (addr <= current_addr) {
+          if (function_begin_addrs.find(addr) == function_begin_addrs.end()) {
+            throw std::logic_error("CALL must refer to BEGIN");
+          }
+        } else {
+          forward_calls.insert(addr);
+        }
         break;
       }
 
