@@ -1277,9 +1277,11 @@ int main(int argc, char *argv[])
   }
   file_name = argv[1];
   bytefile *f = read_file(file_name);
+  // TODO: remove bf
   file = f;
   try {
     find_main();
+    check_file(stderr, f);
   } catch (std::logic_error &e) {
     fprintf(stderr, "Error in bytecode: %s!\n", e.what());
     std::exit(1);
