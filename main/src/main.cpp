@@ -61,6 +61,7 @@ typedef struct
 } bytefile;
 
 size_t bytefile_size;
+bytefile *file;
 
 /* Gets a string from a string table by an index */
 char *get_string(bytefile *f, int pos)
@@ -147,10 +148,10 @@ bytefile *read_file(char *fname)
 
 #define INT (ip += sizeof(int), *(int *)(ip - sizeof(int)))
 #define BYTE *ip++
-#define STRING get_string(bf, INT)
+#define STRING get_string(file, INT)
 #define FAIL failure("ERROR: invalid opcode %d-%d\n", h, l)
 
-void print_code(char *ip, bytefile *bf, FILE *f = stderr)
+void print_code(char *ip, FILE *f = stderr)
 {
   char *ops[] = {"+", "-", "*", "/", "%", "<", "<=", ">", ">=", "==", "!=", "&&", "!!"};
   char *pats[] = {"=str", "#string", "#array", "#sexp", "#ref", "#val", "#fun"};
@@ -160,7 +161,7 @@ void print_code(char *ip, bytefile *bf, FILE *f = stderr)
          h = (x & 0xF0) >> 4,
          l = x & 0x0F;
 
-    fprintf(f, "0x%.8x:\t", ip - bf->code_ptr - 1);
+    fprintf(f, "0x%.8x:\t", ip - file->code_ptr - 1);
 
     switch (h)
     {
@@ -387,8 +388,6 @@ constexpr uint64_t *CALL_STACK_SIZE_END = memory_to_simulation + 1 + ALIGNMENT_F
 uint64_t *operand_stack_end = OPERAND_STACK_SIZE_BEGIN;
 uint64_t *fp = CALL_STACK_SIZE_BEGIN + 2;
 uint64_t *sp = CALL_STACK_SIZE_BEGIN + 2 + 4;
-
-bytefile *file;
 uint64_t main_ptr;
 // TODO globals together
 uint64_t *closure_address = memory_to_simulation + ALIGNMENT_FEATURE;
@@ -533,12 +532,12 @@ char *safe_get_ip(char* ip, size_t size) {
 #define INT (ip += sizeof(int), *(int *)safe_get_ip(ip - sizeof(int), sizeof(int)))
 #define BYTE (ip += 1, *safe_get_ip(ip - 1, 1))
 
-void check_file(FILE *f, bytefile *bf)
+void check_file(FILE *f = stderr)
 {
-  char *ip = bf->code_ptr;
+  char *ip = file->code_ptr;
   
   bool was_begin = false;
-  uint64_t globals = bf->global_area_size;
+  uint64_t globals = file->global_area_size;
   uint64_t locals = 0;
   uint64_t args = 0;
   std::unordered_map<uint64_t, uint64_t> addr_to_args_number;
@@ -551,12 +550,12 @@ void check_file(FILE *f, bytefile *bf)
 
   do
   {
-    //print_code(ip, bf);
+    //print_code(ip, file);
     char x = BYTE,
          h = (x & 0xF0) >> 4,
          l = x & 0x0F;
 
-    uint64_t current_addr = ip - bf->code_ptr - 1;
+    uint64_t current_addr = ip - file->code_ptr - 1;
     if (!was_begin && (h != 5 || l != 2 && l != 3) && h != 15) {
       throw std::logic_error("should be BEGIN instruction");
     }
@@ -586,7 +585,7 @@ void check_file(FILE *f, bytefile *bf)
       if (was_begin) {
         throw std::logic_error("invalid file: <end> before END");
       }
-      if (main_ptr + bf->code_ptr >= ip) {
+      if (main_ptr + file->code_ptr >= ip) {
         throw std::logic_error("main points outside the code");
       }
       if (!forward_calls.empty()) {
@@ -727,7 +726,7 @@ void check_file(FILE *f, bytefile *bf)
         uint64_t nargs = INT;
         uint64_t nlocals = INT;
         was_begin = true;
-        CHECK_ARGS_NUMBER((ip - bf->code_ptr - 1), nargs);
+        CHECK_ARGS_NUMBER((ip - file->code_ptr - 1), nargs);
         addr_of_function_begin = current_addr;
         closure_begin_addrs.insert(addr_of_function_begin);
         args = nargs;
@@ -863,23 +862,23 @@ stop:
 }
 
 
-void run_interpreter(bytefile *bf, FILE *f = stderr)
+void run_interpreter()
 {
 
 #define INT (ip += sizeof(int), *(int *)(ip - sizeof(int)))
 #define BYTE *ip++
-#define STRING get_string(bf, INT)
+#define STRING get_string(file, INT)
 #define FAIL failure("ERROR: invalid opcode %d-%d\n", h, l)
 
   uint64_t arg_numbers_checker = 2;
-  char *ip = main_ptr + bf->code_ptr;
+  char *ip = main_ptr + file->code_ptr;
   __gc_init();
   __gc_stack_bottom = reinterpret_cast<size_t>(memory_to_simulation + sizeof(memory_to_simulation) / sizeof(memory_to_simulation[0]) - sizeof(void *));
   __gc_stack_top = (reinterpret_cast<size_t>(memory_to_simulation) + ALIGNMENT_FEATURE - sizeof(void *)) & (~0xFull);
-  move_globals(bf->global_area_size);
+  move_globals(file->global_area_size);
   do
   {
-    // print_code(ip, bf);
+    // print_code(ip, file);
     char x = BYTE,
          h = (x & 0xF0) >> 4,
          l = x & 0x0F;
@@ -960,7 +959,7 @@ void run_interpreter(bytefile *bf, FILE *f = stderr)
 
       case 5: { // JMP
         uint64_t addr = INT;
-        ip = addr + bf->code_ptr;
+        ip = addr + file->code_ptr;
         break;
       }
 
@@ -1054,7 +1053,7 @@ void run_interpreter(bytefile *bf, FILE *f = stderr)
         uint64_t addr = INT;
         uint64_t value = make_unboxed(pop_operand());
         if (value == 0) {
-          ip = addr + bf->code_ptr;
+          ip = addr + file->code_ptr;
         }
         break;
       }
@@ -1063,7 +1062,7 @@ void run_interpreter(bytefile *bf, FILE *f = stderr)
         uint64_t addr = INT;
         uint64_t value = make_unboxed(pop_operand());
         if (value != 0) {
-          ip = addr + bf->code_ptr;
+          ip = addr + file->code_ptr;
         }
         break;
       }
@@ -1133,16 +1132,16 @@ void run_interpreter(bytefile *bf, FILE *f = stderr)
           throw std::logic_error("closure expected");
         }
         arg_numbers_checker = args_number;
-        ip = *reinterpret_cast<uint64_t *>(*closure_address) + bf->code_ptr;
+        ip = *reinterpret_cast<uint64_t *>(*closure_address) + file->code_ptr;
         break;
       }
-      
+
       case 6: { // CALL
         uint64_t addr = INT;
         uint64_t args_number = INT;
         call_begin(args_number, ip);
         arg_numbers_checker = args_number;
-        ip = addr + bf->code_ptr;
+        ip = addr + file->code_ptr;
         break;
       }
 
@@ -1279,17 +1278,16 @@ int main(int argc, char *argv[])
   }
   file_name = argv[1];
   bytefile *f = read_file(file_name);
-  // TODO: remove bf
   file = f;
   try {
     find_main();
-    check_file(stderr, f);
+    check_file();
   } catch (std::logic_error &e) {
     fprintf(stderr, "Error in bytecode: %s!\n", e.what());
     std::exit(1);
   }
   try {
-    run_interpreter(f);
+    run_interpreter();
   } catch (std::logic_error &e) {
     fprintf(stderr, "Error: %s!\n", e.what());
     std::exit(1);
