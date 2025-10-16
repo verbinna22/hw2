@@ -476,10 +476,11 @@ char *call_end() {
   uint64_t *need_sp = reinterpret_cast<uint64_t *>(fp[1]);
   *closure_address = fp[3];
   fp = reinterpret_cast<uint64_t *>(fp[2]);
-  while (sp > need_sp) {
+  while (sp > need_sp && need_sp != 0) {
     --sp;
     *sp = 0;
   }
+  sp = need_sp;
   return result;
 }
 

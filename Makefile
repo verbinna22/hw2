@@ -30,8 +30,9 @@ debug: LDFLAGS += -g
 debug: CCFLAGS += -O0 -DDEBUG -g3
 debug: $(BUILD_DIR)/$(TARGET_EXEC)
 
-release: CXXFLAGS += -O3 -DNDEBUG
-release: CCFLAGS += -O3 -DNDEBUG
+release: CXXFLAGS += -O3 -DNDEBUG  -g3
+release: LDFLAGS += -g
+release: CCFLAGS += -O3 -DNDEBUG  -g3
 release: $(BUILD_DIR)/$(TARGET_EXEC)
 
 asan: CXXFLAGS += -fsanitize=address
