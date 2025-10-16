@@ -515,6 +515,7 @@ void check_unboxed(uint64_t n, const std::string &message) {
 #define CHECK_LOCALS(i) do { if ((i) >= locals) throw std::logic_error("invalid local dereference"); } while(0)
 #define CHECK_ARGS(i) do { if ((i) >= args) throw std::logic_error("invalid arg dereference"); } while(0)
 #define CHECK_GLOBAL(i) do { if ((i) >= globals) throw std::logic_error("invalid global dereference"); } while(0)
+// TODO runtime check CLOSURE
 
 void check_file(FILE *f, bytefile *bf)
 {
@@ -539,7 +540,8 @@ void check_file(FILE *f, bytefile *bf)
     if (!was_begin && (h != 5 || l != 2)) {
       throw std::logic_error("should be BEGIN instruction");
     }
-    if (ip - 1 == main_ptr + bf->code_ptr && h != 5 || l != 2) {
+    bool is_main_begin = ip - 1 == main_ptr + bf->code_ptr;
+    if (is_main_begin && h != 5 || l != 2) {
       throw std::logic_error("main should point to BEGIN");
     }
 
@@ -663,6 +665,9 @@ void check_file(FILE *f, bytefile *bf)
         fprintf(f, "%d", nlocals);
         was_begin = true;
         CHECK_ARGS_NUMBER((ip - bf->code_ptr - 1), nargs);
+        if (is_main_begin && nargs != 2) {
+          throw std::logic_error("should be 2 args in main");
+        }
         args = nargs;
         locals = nlocals;
         break;
