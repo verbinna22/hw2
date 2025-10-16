@@ -572,18 +572,26 @@ void check_file(FILE *f, bytefile *bf)
     case 1:
       switch (l)
       {
-      case 0:
-        fprintf(f, "CONST\t%d", INT);
+      case 0: {
+        uint64_t n = INT;
+        fprintf(f, "CONST\t%d", n);
         break;
+      }
 
-      case 1:
-        fprintf(f, "STRING\t%s", STRING);
+      case 1: {
+        char *tag = STRING;
+        fprintf(f, "STRING\t%s", tag);
         break;
+      }
 
-      case 2:
-        fprintf(f, "SEXP\t%s ", STRING);
-        fprintf(f, "%d", INT);
+      case 2: {
+        char *tag = STRING;
+        uint64_t n = INT;
+        fprintf(f, "SEXP\t%s ", tag);
+        fprintf(f, "%d", n);
+        CHECK_NUMBER_IS_ADEQUATE(n);
         break;
+      }
 
       case 3:
         fprintf(f, "STI");
@@ -710,8 +718,9 @@ void check_file(FILE *f, bytefile *bf)
         break;
       }
 
-      case 4:
-        fprintf(f, "CLOSURE\t0x%.8x", INT);
+      case 4: {
+        uint64_t addr = INT;
+        fprintf(f, "CLOSURE\t0x%.8x", addr);
         {
           int n = INT;
           CHECK_NUMBER_IS_ADEQUATE(n);
@@ -742,6 +751,7 @@ void check_file(FILE *f, bytefile *bf)
           }
         };
         break;
+      }
 
       case 5: {
         fprintf(f, "CALLC\t%d", INT);
