@@ -352,7 +352,7 @@ stop:
   fprintf(f, "<end>\n");
 }
 
-#define debug(...) fprintf(__VA_ARGS__)
+#define debug(...) //fprintf(__VA_ARGS__)
 constexpr uint64_t OPERAND_STACK_SIZE_U = 1024 * 1024;
 constexpr uint64_t CALL_STACK_SIZE_U = 1024 * 1024;
 
@@ -513,8 +513,8 @@ void run_interpreter(bytefile *bf, FILE *f = stderr)
     char x = BYTE,
          h = (x & 0xF0) >> 4,
          l = x & 0x0F;
-
-    dump_heap(); // TODO
+// TODO: no debug mode (gc), additional fun to print bc, check
+    //dump_heap(); // TODO
     debug(f, "0x%.8x (0x%.8x):\t", ip - bf->code_ptr - 1, ip - 1);
     print_stacks();
 
@@ -930,10 +930,12 @@ void run_interpreter(bytefile *bf, FILE *f = stderr)
         push_operand(Llength(reinterpret_cast<void *>(pop_operand())));
         break;
 
-      case 3:
+      case 3: {
         debug(f, "CALL\tLstring");
-        push_operand(reinterpret_cast<uint64_t>(Lstring(reinterpret_cast<aint *>(pop_operand()))));
+        uint64_t value = pop_operand();
+        push_operand(reinterpret_cast<uint64_t>(Lstring(reinterpret_cast<aint *>(&value))));
         break;
+      }
 
       case 4: {
         uint64_t n = INT;
