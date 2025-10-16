@@ -669,7 +669,6 @@ void check_file(FILE *f, bytefile *bf)
         FAIL;
       }
       break;
-// TODO: remove odd instrs
     case 3: // LDA
       throw std::logic_error("LDA is temporary prohibited");
     case 2: // LD
@@ -772,7 +771,7 @@ void check_file(FILE *f, bytefile *bf)
         }
         break;
       }
-
+// TODO call/callc
       case 5: { // CALLC
         uint64_t n = INT;
         break;
@@ -872,10 +871,8 @@ void run_interpreter(bytefile *bf, FILE *f = stderr)
 #define STRING get_string(bf, INT)
 #define FAIL failure("ERROR: invalid opcode %d-%d\n", h, l)
 
+  uint64_t arg_numbers_checker = 2;
   char *ip = main_ptr + bf->code_ptr;
-  char *ops[] = {"+", "-", "*", "/", "%", "<", "<=", ">", ">=", "==", "!=", "&&", "!!"};
-  char *pats[] = {"=str", "#string", "#array", "#sexp", "#ref", "#val", "#fun"};
-  char *lds[] = {"LD", "LDA", "ST"};
   __gc_init();
   __gc_stack_bottom = reinterpret_cast<size_t>(memory_to_simulation + sizeof(memory_to_simulation) / sizeof(memory_to_simulation[0]) - sizeof(void *));
   __gc_stack_top = (reinterpret_cast<size_t>(memory_to_simulation) + ALIGNMENT_FEATURE - sizeof(void *)) & (~0xFull);
@@ -886,13 +883,12 @@ void run_interpreter(bytefile *bf, FILE *f = stderr)
     char x = BYTE,
          h = (x & 0xF0) >> 4,
          l = x & 0x0F;
-// TODO: no debug mode (gc), additional fun to print bc, check
-    // dump_heap(); // TODO
+// TODO: no debug mode (gc)
+    // dump_heap();
     // print_stacks();
 
     switch (h)
     {
-// TODO eliminate stop label, ops etc
     /* BINOP  must be valid*/
     case 0: {
       uint64_t result;
@@ -1075,6 +1071,9 @@ void run_interpreter(bytefile *bf, FILE *f = stderr)
       case 2: { // BEGIN
         uint64_t nargs = INT;
         uint64_t nlocals = INT;
+        if (nargs != arg_numbers_checker) {
+          throw std::logic_error("incorrect argument number");
+        }
         alloc_locals(nlocals);
         break;
       }
@@ -1082,6 +1081,9 @@ void run_interpreter(bytefile *bf, FILE *f = stderr)
       case 3: { // CBEGIN
         uint64_t nargs = INT;
         uint64_t nlocals = INT;
+        if (nargs != arg_numbers_checker) {
+          throw std::logic_error("incorrect argument number");
+        }
         alloc_locals(nlocals);
         break;
       }
@@ -1127,17 +1129,19 @@ void run_interpreter(bytefile *bf, FILE *f = stderr)
         uint64_t args_number = INT;
         call_begin(args_number, ip);
         *closure_address = pop_operand();
-        if (!Bclosure_tag_patt(reinterpret_cast<void *>(*closure_address)) || LEN(TO_DATA((*closure_address))) - 1 != args_number) {
-          throw std::logic_error("closure with correct argument numbers expected");
+        if (!Bclosure_tag_patt(reinterpret_cast<void *>(*closure_address))) {
+          throw std::logic_error("closure expected");
         }
+        arg_numbers_checker = args_number;
         ip = *reinterpret_cast<uint64_t *>(*closure_address) + bf->code_ptr;
         break;
       }
-// TODO: CBEGIN CALLC nargs
+      
       case 6: { // CALL
         uint64_t addr = INT;
         uint64_t args_number = INT;
         call_begin(args_number, ip);
+        arg_numbers_checker = args_number;
         ip = addr + bf->code_ptr;
         break;
       }
