@@ -1,6 +1,5 @@
 /* Lama SM Bytecode interpreter */
 
-#include <algorithm>
 #include <bits/types/clockid_t.h>
 #include <cstddef>
 #include <cstdint>
@@ -9,6 +8,7 @@
 #include <stdint.h>
 #include <unordered_map>
 #include <unordered_set>
+
 extern "C" {
 #define _Noreturn [[noreturn]]
 #include "runtime/gc.h"
@@ -43,8 +43,9 @@ extern aint Llength (void *p);
 extern void *Lstring (aint* args /* void *p */);
 extern void *Barray (aint* args, aint bn);
 extern aint LtagHash (char *s);
-extern size_t __gc_stack_top, __gc_stack_bottom;
 void dump_heap ();
+
+extern size_t __gc_stack_top, __gc_stack_bottom;
 }
 
 /* The unpacked representation of bytecode file */
@@ -62,6 +63,7 @@ typedef struct
 
 size_t bytefile_size;
 bytefile *file;
+char *file_name;
 
 /* Gets a string from a string table by an index */
 char *get_string(bytefile *f, int pos)
@@ -132,13 +134,6 @@ bytefile *read_file(char *fname)
     throw std::logic_error("bad file format");
   }
 
-  // for (int i = 0; i < file->stringtab_size; ++i) {
-  //   char *tmp = &file->string_ptr[i];
-  //   while (tmp < (char *)f + bytefile_size && *tmp != 0) ++tmp;
-  //   if (tmp == (char *)f + bytefile_size) {
-  //     throw std::logic_error("string is not in file");
-  //   }
-  // }
   if (file->string_ptr[file->stringtab_size - 1] != 0) {
     throw std::logic_error("string is not in file");
   }
@@ -389,7 +384,6 @@ uint64_t *operand_stack_end = OPERAND_STACK_SIZE_BEGIN;
 uint64_t *fp = CALL_STACK_SIZE_BEGIN + 2;
 uint64_t *sp = CALL_STACK_SIZE_BEGIN + 2 + 4;
 uint64_t main_ptr;
-// TODO globals together
 uint64_t *closure_address = memory_to_simulation + ALIGNMENT_FEATURE;
 
 void move_globals(uint64_t nglobals) {
@@ -476,8 +470,6 @@ uint64_t *get_closure(uint64_t i) {
   }
   return reinterpret_cast<uint64_t *>(*closure_address) + (i + 1); //  Value.Access i -> I (word_size * (i + 1), r15)
 }
-
-char *file_name;
 
 char *call_end() {
   char *result = reinterpret_cast<char *>(fp[0]);
@@ -860,15 +852,13 @@ stop:
   return;
 }
 
+#undef INT
+#undef BYTE
+#define INT (ip += sizeof(int), *(int *)(ip - sizeof(int)))
+#define BYTE *ip++
 
 void run_interpreter()
 {
-
-#define INT (ip += sizeof(int), *(int *)(ip - sizeof(int)))
-#define BYTE *ip++
-#define STRING get_string(file, INT)
-#define FAIL failure("ERROR: invalid opcode %d-%d\n", h, l)
-
   uint64_t arg_numbers_checker = 2;
   char *ip = main_ptr + file->code_ptr;
   __gc_init();
