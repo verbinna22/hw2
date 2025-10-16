@@ -871,7 +871,6 @@ void run_interpreter()
     char x = BYTE,
          h = (x & 0xF0) >> 4,
          l = x & 0x0F;
-// TODO: no debug mode (gc)
     // dump_heap();
     // print_stacks();
 
