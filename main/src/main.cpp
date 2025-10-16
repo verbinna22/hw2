@@ -552,13 +552,13 @@ void check_file(FILE *f, bytefile *bf)
 
   do
   {
-    print_code(ip, bf);
+    //print_code(ip, bf);
     char x = BYTE,
          h = (x & 0xF0) >> 4,
          l = x & 0x0F;
 
     uint64_t current_addr = ip - bf->code_ptr - 1;
-    if (!was_begin && (h != 5 || l != 2) && h != 15) {
+    if (!was_begin && (h != 5 || l != 2 && l != 3) && h != 15) {
       throw std::logic_error("should be BEGIN instruction");
     }
     bool is_main_begin = current_addr == main_ptr;
@@ -594,10 +594,10 @@ void check_file(FILE *f, bytefile *bf)
         throw std::logic_error("unresolved calls was found");
       }
       if (!forward_ccalls.empty()) {
-        //throw std::logic_error("unresolved closures was found");
-        for (auto ccal : forward_ccalls) {
-          fprintf(stderr, "%lx\n", ccal); //
-        }
+        throw std::logic_error("unresolved closures was found");
+        // for (auto ccal : forward_ccalls) {
+        //   fprintf(stderr, "%lx\n", ccal); //
+        // }
       }
       goto stop;
 
