@@ -552,7 +552,7 @@ void check_file(FILE *f, bytefile *bf)
 
   do
   {
-    //print_code(ip, bf);
+    print_code(ip, bf);
     char x = BYTE,
          h = (x & 0xF0) >> 4,
          l = x & 0x0F;
@@ -574,7 +574,7 @@ void check_file(FILE *f, bytefile *bf)
       }
     }
     if (forward_ccalls.find(current_addr) != forward_ccalls.end()) {
-      if (h != 5 || l != 3) {
+      if (h != 5 || l != 3 && l != 2) {
         throw std::logic_error("CLOSURE must refer to CBEGIN");
       } else {
         forward_ccalls.erase(forward_ccalls.find(current_addr));
@@ -594,7 +594,10 @@ void check_file(FILE *f, bytefile *bf)
         throw std::logic_error("unresolved calls was found");
       }
       if (!forward_ccalls.empty()) {
-        throw std::logic_error("unresolved closures was found");
+        //throw std::logic_error("unresolved closures was found");
+        for (auto ccal : forward_ccalls) {
+          fprintf(stderr, "%lx\n", ccal); //
+        }
       }
       goto stop;
 
@@ -766,7 +769,7 @@ void check_file(FILE *f, bytefile *bf)
             throw std::logic_error("CLOSURE must correspond CBEGIN");
           }
         } else {
-          forward_ccalls.insert(current_addr);
+          forward_ccalls.insert(addr);
         }
         break;
       }
