@@ -7,6 +7,7 @@
 #include <cstring>
 #include <stdexcept>
 #include <stdint.h>
+#include <unordered_map>
 extern "C" {
 #define _Noreturn [[noreturn]]
 #include "runtime/gc.h"
@@ -502,13 +503,32 @@ void check_unboxed(uint64_t n, const std::string &message) {
   }
 }
 
+#define CHECK_ARGS_NUMBER(addr, arg_number) \
+        do { if (addr_to_args_number.find(addr) != addr_to_args_number.end()) { \
+          if (addr_to_args_number[addr] != (arg_number)) { \
+            throw std::logic_error("incorrect args number"); \
+          } \
+        } else { \
+          addr_to_args_number[addr] = (arg_number); \
+        } } while(0)
+
+#define CHECK_LOCALS(i) do { if ((i) >= locals) throw std::logic_error("invalid local dereference"); } while(0)
+#define CHECK_ARGS(i) do { if ((i) >= args) throw std::logic_error("invalid arg dereference"); } while(0)
+#define CHECK_GLOBAL(i) do { if ((i) >= globals) throw std::logic_error("invalid global dereference"); } while(0)
+
 void check_file(FILE *f, bytefile *bf)
 {
   char *ip = bf->code_ptr;
   char *ops[] = {"+", "-", "*", "/", "%", "<", "<=", ">", ">=", "==", "!=", "&&", "!!"};
   char *pats[] = {"=str", "#string", "#array", "#sexp", "#ref", "#val", "#fun"};
   char *lds[] = {"LD", "LDA", "ST"};
+
   bool was_begin = false;
+  uint64_t globals = bf->global_area_size;
+  uint64_t locals = 0;
+  uint64_t args = 0;
+  std::unordered_map<uint64_t, uint64_t> addr_to_args_number;
+
   do
   {
     char x = BYTE,
@@ -519,12 +539,18 @@ void check_file(FILE *f, bytefile *bf)
     if (!was_begin && (h != 5 || l != 2)) {
       throw std::logic_error("should be BEGIN instruction");
     }
+    if (ip - 1 == main_ptr + bf->code_ptr && h != 5 || l != 2) {
+      throw std::logic_error("main should point to BEGIN");
+    }
 
     switch (h)
     {
     case 15:
       if (was_begin) {
         throw std::logic_error("invalid file: <end> before END");
+      }
+      if (main_ptr + bf->code_ptr >= ip) {
+        throw std::logic_error("main points outside the code");
       }
       goto stop;
 
@@ -593,26 +619,31 @@ void check_file(FILE *f, bytefile *bf)
 
     case 2:
     case 3:
-    case 4:
+    case 4: {
       fprintf(f, "%s\t", lds[h - 2]);
+      uint64_t i = INT;
       switch (l)
       {
       case 0:
-        fprintf(f, "G(%d)", INT);
+        fprintf(f, "G(%d)", i);
+        CHECK_GLOBAL(i);
         break;
       case 1:
-        fprintf(f, "L(%d)", INT);
+        fprintf(f, "L(%d)", i);
+        CHECK_LOCALS(i);
         break;
       case 2:
-        fprintf(f, "A(%d)", INT);
+        fprintf(f, "A(%d)", i);
+        CHECK_ARGS(i);
         break;
       case 3:
-        fprintf(f, "C(%d)", INT);
+        fprintf(f, "C(%d)", i);
         break;
       default:
         FAIL;
       }
       break;
+    }
 
     case 5:
       switch (l)
@@ -625,17 +656,29 @@ void check_file(FILE *f, bytefile *bf)
         fprintf(f, "CJMPnz\t0x%.8x", INT);
         break;
 
-      case 2:
-        fprintf(f, "BEGIN\t%d ", INT);
-        fprintf(f, "%d", INT);
+      case 2: {
+        uint64_t nargs = INT;
+        uint64_t nlocals = INT;
+        fprintf(f, "BEGIN\t%d ", nargs);
+        fprintf(f, "%d", nlocals);
         was_begin = true;
+        CHECK_ARGS_NUMBER((ip - bf->code_ptr - 1), nargs);
+        args = nargs;
+        locals = nlocals;
         break;
+      }
 
-      case 3:
-        fprintf(f, "CBEGIN\t%d ", INT);
-        fprintf(f, "%d", INT);
+      case 3: {
+        uint64_t nargs = INT;
+        uint64_t nlocals = INT;
+        fprintf(f, "CBEGIN\t%d ", nargs);
+        fprintf(f, "%d", nlocals);
         was_begin = true;
+        CHECK_ARGS_NUMBER((ip - bf->code_ptr - 1), nargs);
+        args = nargs;
+        locals = nlocals;
         break;
+      }
 
       case 4:
         fprintf(f, "CLOSURE\t0x%.8x", INT);
@@ -643,19 +686,24 @@ void check_file(FILE *f, bytefile *bf)
           int n = INT;
           for (int i = 0; i < n; i++)
           {
-            switch (BYTE)
+            uint64_t byte = BYTE;
+            uint64_t number = INT;
+            switch (byte)
             {
             case 0:
-              fprintf(f, "G(%d)", INT);
+              fprintf(f, "G(%d)", number);
+              CHECK_GLOBAL(number);
               break;
             case 1:
-              fprintf(f, "L(%d)", INT);
+              fprintf(f, "L(%d)", number);
+              CHECK_LOCALS(number);
               break;
             case 2:
-              fprintf(f, "A(%d)", INT);
+              fprintf(f, "A(%d)", number);
+              CHECK_ARGS(number);
               break;
             case 3:
-              fprintf(f, "C(%d)", INT);
+              fprintf(f, "C(%d)", number);
               break;
             default:
               FAIL;
@@ -664,14 +712,19 @@ void check_file(FILE *f, bytefile *bf)
         };
         break;
 
-      case 5:
+      case 5: {
         fprintf(f, "CALLC\t%d", INT);
         break;
+      }
 
-      case 6:
-        fprintf(f, "CALL\t0x%.8x ", INT);
-        fprintf(f, "%d", INT);
+      case 6: {
+        uint64_t addr = INT;
+        uint64_t arg_number = INT;
+        fprintf(f, "CALL\t0x%.8x ", addr);
+        fprintf(f, "%d", arg_number);
+        CHECK_ARGS_NUMBER(addr, arg_number);
         break;
+      }
 
       case 7:
         fprintf(f, "TAG\t%s ", STRING);
