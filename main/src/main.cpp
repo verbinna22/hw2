@@ -618,8 +618,7 @@ void check_file(FILE *f, bytefile *bf)
       }
 
       case 3:
-        fprintf(f, "STI");
-        break;
+        throw std::logic_error("STI is temporary prohibited");
 
       case 4:
         fprintf(f, "STA");
@@ -667,9 +666,10 @@ void check_file(FILE *f, bytefile *bf)
         FAIL;
       }
       break;
-
-    case 2:
+// TODO: runtime A() + closure size + remove odd instrs
     case 3:
+      throw std::logic_error("LDA is temporary prohibited");
+    case 2:
     case 4: {
       fprintf(f, "%s\t", lds[h - 2]);
       uint64_t i = INT;
