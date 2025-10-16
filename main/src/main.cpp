@@ -954,9 +954,6 @@ void run_interpreter(bytefile *bf, FILE *f = stderr)
         break;
       }
 
-      case 3:
-        throw std::logic_error("STI temporary prohibited");
-
       case 4: { // STA
         uint64_t v = pop_operand();
         uint64_t i = pop_operand();
@@ -1028,8 +1025,6 @@ void run_interpreter(bytefile *bf, FILE *f = stderr)
       push_operand(variable);
       break;
     }
-    case 3: // LDA
-      throw std::logic_error("LDA temporary prohibited");
     case 4: {// ST
       uint64_t i = INT;
       uint64_t value = pop_operand();
