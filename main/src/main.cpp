@@ -63,12 +63,10 @@ size_t bytefile_size;
 /* Gets a string from a string table by an index */
 char *get_string(bytefile *f, int pos)
 {
-  char *string = &f->string_ptr[pos];
-  char *tmp = string;
-  while (tmp < (char *)f + bytefile_size && *tmp != 0) ++tmp;
-  if (tmp == (char *)f + bytefile_size) {
-    throw std::logic_error("string is not in file");
+  if (pos >= f->stringtab_size) {
+    throw std::logic_error("incorrect string offset");
   }
+  char *string = &f->string_ptr[pos];
   return string;
 }
 
@@ -130,6 +128,18 @@ bytefile *read_file(char *fname)
   ) {
     throw std::logic_error("bad file format");
   }
+
+  // for (int i = 0; i < file->stringtab_size; ++i) {
+  //   char *tmp = &file->string_ptr[i];
+  //   while (tmp < (char *)f + bytefile_size && *tmp != 0) ++tmp;
+  //   if (tmp == (char *)f + bytefile_size) {
+  //     throw std::logic_error("string is not in file");
+  //   }
+  // }
+  if (file->string_ptr[file->stringtab_size - 1] != 0) {
+    throw std::logic_error("string is not in file");
+  }
+
   return file;
 }
 
