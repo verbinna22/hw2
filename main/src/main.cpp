@@ -522,6 +522,18 @@ void check_unboxed(uint64_t n, const std::string &message) {
 // TODO alignment
 // TODO uint elim
 
+char *safe_get_ip(char* ip, size_t size) {
+  if (ip + size - 1 > (char *)file + bytefile_size) {
+    throw std::logic_error("file is not finishing");
+  }
+  return ip;
+}
+
+#undef INT
+#undef BYTE
+#define INT (ip += sizeof(int), *(int *)safe_get_ip(ip - sizeof(int), sizeof(int)))
+#define BYTE (ip += 1, *safe_get_ip(ip - 1, 1))
+
 void check_file(FILE *f, bytefile *bf)
 {
   char *ip = bf->code_ptr;
