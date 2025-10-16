@@ -823,6 +823,9 @@ void check_file(FILE *f, bytefile *bf)
       break;
 
     case 6:
+      if (l >= 7) {
+        throw std::logic_error("unsupported pattern for PATT");
+      }
       fprintf(f, "PATT\t%s", pats[l]);
       break;
 
