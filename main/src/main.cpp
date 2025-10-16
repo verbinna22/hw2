@@ -40,6 +40,7 @@ extern aint Lwrite (aint n);
 extern aint Llength (void *p);
 extern void *Lstring (aint* args /* void *p */);
 extern void *Barray (aint* args, aint bn);
+extern aint LtagHash (char *s);
 extern size_t __gc_stack_top, __gc_stack_bottom;
 void dump_heap ();
 }
@@ -351,7 +352,7 @@ stop:
   fprintf(f, "<end>\n");
 }
 
-#define debug(...) //fprintf(__VA_ARGS__)
+#define debug(...) fprintf(__VA_ARGS__)
 constexpr uint64_t OPERAND_STACK_SIZE_U = 1024 * 1024;
 constexpr uint64_t CALL_STACK_SIZE_U = 1024 * 1024;
 
@@ -582,7 +583,7 @@ void run_interpreter(bytefile *bf, FILE *f = stderr)
         debug(f, "SEXP\t%s ", ptr);  // TODO
         debug(f, "%d", n);
         aint tmp_array[n + 1];
-        tmp_array[n] = hash_tag(reinterpret_cast<char *>(ptr));
+        tmp_array[n] = LtagHash(reinterpret_cast<char *>(ptr));
         for (int i = n - 1; i >= 0; --i) {
           tmp_array[i] = pop_operand();
         }
@@ -841,7 +842,7 @@ void run_interpreter(bytefile *bf, FILE *f = stderr)
         debug(f, "%d", size); // TODO
         uint64_t data = pop_operand();
         uint64_t value = Btag(
-          reinterpret_cast<char *>(data), hash_tag(reinterpret_cast<char *>(string_ptr)), make_boxed(size));
+          reinterpret_cast<char *>(data), LtagHash(reinterpret_cast<char *>(string_ptr)), make_boxed(size));
         push_operand(value);
         break;
       }
