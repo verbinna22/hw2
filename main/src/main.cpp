@@ -376,21 +376,22 @@ void print_code(char *ip, bytefile *bf, FILE *f = stderr)
 
 constexpr uint64_t OPERAND_STACK_SIZE_U = 1024 * 1024;
 constexpr uint64_t CALL_STACK_SIZE_U = 1024 * 1024;
+constexpr uint64_t ALIGNMENT_FEATURE = 16;
 
-uint64_t memory_to_simulation[1 + OPERAND_STACK_SIZE_U + CALL_STACK_SIZE_U];
+uint64_t memory_to_simulation[1 + ALIGNMENT_FEATURE + OPERAND_STACK_SIZE_U + CALL_STACK_SIZE_U];
 
-uint64_t *OPERAND_STACK_SIZE_BEGIN = memory_to_simulation + 1;
-uint64_t *OPERAND_STACK_SIZE_END = memory_to_simulation + 1 + OPERAND_STACK_SIZE_U;
-constexpr uint64_t *CALL_STACK_SIZE_BEGIN = memory_to_simulation + 1 + OPERAND_STACK_SIZE_U;
-constexpr uint64_t *CALL_STACK_SIZE_END = memory_to_simulation + 1 + OPERAND_STACK_SIZE_U + CALL_STACK_SIZE_U;
+uint64_t *OPERAND_STACK_SIZE_BEGIN = memory_to_simulation + 1 + ALIGNMENT_FEATURE;
+uint64_t *OPERAND_STACK_SIZE_END = memory_to_simulation + 1 + ALIGNMENT_FEATURE + OPERAND_STACK_SIZE_U;
+constexpr uint64_t *CALL_STACK_SIZE_BEGIN = memory_to_simulation + 1 + ALIGNMENT_FEATURE + OPERAND_STACK_SIZE_U;
+constexpr uint64_t *CALL_STACK_SIZE_END = memory_to_simulation + 1 + ALIGNMENT_FEATURE + OPERAND_STACK_SIZE_U + CALL_STACK_SIZE_U;
 uint64_t *operand_stack_end = OPERAND_STACK_SIZE_BEGIN;
 uint64_t *fp = CALL_STACK_SIZE_BEGIN + 2;
 uint64_t *sp = CALL_STACK_SIZE_BEGIN + 2 + 4;
 
 bytefile *file;
 uint64_t main_ptr;
-
-uint64_t *closure_address = memory_to_simulation;
+// TODO globals together
+uint64_t *closure_address = memory_to_simulation + ALIGNMENT_FEATURE;
 
 void move_globals(uint64_t nglobals) {
   OPERAND_STACK_SIZE_BEGIN += nglobals;
@@ -455,7 +456,7 @@ void print_stacks() {
   }
 
   fprintf(stderr, "\n\ngloba + clos:");
-  for (uint64_t *i = OPERAND_STACK_SIZE_BEGIN - 1; i >= memory_to_simulation; --i) {
+  for (uint64_t *i = OPERAND_STACK_SIZE_BEGIN - 1; i >= memory_to_simulation + ALIGNMENT_FEATURE; --i) {
     fprintf(stderr, " %li ", *i);
   }
 
@@ -516,9 +517,6 @@ void check_unboxed(uint64_t n, const std::string &message) {
 #define CHECK_GLOBAL(i) do { if ((i) >= globals) throw std::logic_error("invalid global dereference"); } while(0)
 #define CHECK_JMP_ADDR(addr) do { if (addr <= current_addr) { if (addr <= addr_of_function_begin) throw std::logic_error("invalid jump"); } else { addrs_jump_in_function.insert(addr); } } while (0)
 #define CHECK_NUMBER_IS_ADEQUATE(n) do { if (n > 256) throw std::logic_error("inadequate constant"); } while (0)
-// TODO runtime check CLOSURE
-// TODO alignment
-// TODO uint elim
 
 char *safe_get_ip(char* ip, size_t size) {
   if (ip + size - 1 > (char *)file + bytefile_size) {
@@ -877,7 +875,7 @@ void run_interpreter(bytefile *bf, FILE *f = stderr)
   char *lds[] = {"LD", "LDA", "ST"};
   __gc_init();
   __gc_stack_bottom = reinterpret_cast<size_t>(memory_to_simulation + sizeof(memory_to_simulation) / sizeof(memory_to_simulation[0]) - sizeof(void *));
-  __gc_stack_top = (reinterpret_cast<size_t>(memory_to_simulation) - sizeof(void *)) & (~0xFull);
+  __gc_stack_top = (reinterpret_cast<size_t>(memory_to_simulation) + ALIGNMENT_FEATURE - sizeof(void *)) & (~0xFull);
   move_globals(bf->global_area_size);
   do
   {
@@ -886,7 +884,7 @@ void run_interpreter(bytefile *bf, FILE *f = stderr)
          h = (x & 0xF0) >> 4,
          l = x & 0x0F;
 // TODO: no debug mode (gc), additional fun to print bc, check
-    //dump_heap(); // TODO
+    // dump_heap(); // TODO
     // print_stacks();
 
     switch (h)
