@@ -129,12 +129,13 @@ bytefile *read_file(char *fname)
   if (file->string_ptr >= (char *)file + bytefile_size ||
     (char *)file->public_ptr >= (char *)file + bytefile_size ||
     file->code_ptr >= (char *)file + bytefile_size ||
-    file->string_ptr + file->stringtab_size > (char *)file + bytefile_size
+    file->string_ptr + file->stringtab_size > (char *)file + bytefile_size ||
+    file->stringtab_size > bytefile_size
   ) {
     throw std::logic_error("bad file format");
   }
 
-  if (file->string_ptr[file->stringtab_size - 1] != 0) {
+  if (file->stringtab_size > 0 && file->string_ptr[file->stringtab_size - 1] != 0) {
     throw std::logic_error("string is not in file");
   }
 
@@ -1266,9 +1267,9 @@ int main(int argc, char *argv[])
     std::exit(1);
   }
   file_name = argv[1];
-  bytefile *f = read_file(file_name);
-  file = f;
   try {
+    bytefile *f = read_file(file_name);
+    file = f;
     find_main();
     check_file();
   } catch (std::logic_error &e) {
