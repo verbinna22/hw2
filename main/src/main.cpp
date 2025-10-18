@@ -377,90 +377,101 @@ static void print_code(char *ip, FILE *f = stderr)
 
 constexpr uint64_t OPERAND_STACK_SIZE_U = 1024 * 1024;
 constexpr uint64_t CALL_STACK_SIZE_U = 1024 * 1024;
-constexpr uint64_t ALIGNMENT_FEATURE = 16;
 
-static uint64_t memory_to_simulation[1 + ALIGNMENT_FEATURE + OPERAND_STACK_SIZE_U + CALL_STACK_SIZE_U];
+// __gc_stack_top ( operands || current_closure_register || globals
+// || args | RA | prev_nargs | prev_nlocals | prev_closure | locals ) __gc_stack_bottom
+static uint64_t memory_to_simulation[1 + OPERAND_STACK_SIZE_U + CALL_STACK_SIZE_U];
 
-static uint64_t *OPERAND_STACK_SIZE_BEGIN = memory_to_simulation + 1 + ALIGNMENT_FEATURE;
-static uint64_t *OPERAND_STACK_SIZE_END = memory_to_simulation + 1 + ALIGNMENT_FEATURE + OPERAND_STACK_SIZE_U;
-constexpr uint64_t *CALL_STACK_SIZE_BEGIN = memory_to_simulation + 1 + ALIGNMENT_FEATURE + OPERAND_STACK_SIZE_U;
-constexpr uint64_t *CALL_STACK_SIZE_END = memory_to_simulation + 1 + ALIGNMENT_FEATURE + OPERAND_STACK_SIZE_U + CALL_STACK_SIZE_U;
-static uint64_t *operand_stack_end = OPERAND_STACK_SIZE_BEGIN;
-static uint64_t *fp = CALL_STACK_SIZE_BEGIN + 2;
-static uint64_t *sp = CALL_STACK_SIZE_BEGIN + 2 + 4;
-static uint64_t main_ptr;
-static uint64_t *closure_address = memory_to_simulation + ALIGNMENT_FEATURE;
+constexpr uint64_t *OPERAND_STACK_BEGIN_INCL = memory_to_simulation + OPERAND_STACK_SIZE_U - 1;
+constexpr uint64_t *OPERAND_STACK_END_INCL = memory_to_simulation;
+constexpr uint64_t *CLOSURE_ADDRESS = memory_to_simulation + OPERAND_STACK_SIZE_U;
+constexpr uint64_t *GLOBALS_BEGIN = memory_to_simulation + OPERAND_STACK_SIZE_U + 1;
+#define GLOBALS_END CALL_STACK_BEGIN
+static uint64_t *CALL_STACK_BEGIN = memory_to_simulation + OPERAND_STACK_SIZE_U + 1;
+#define sp __gc_stack_bottom
+#define operand_stack_end __gc_stack_top
+constexpr uint64_t *CALL_STACK_END = &memory_to_simulation[1 + OPERAND_STACK_SIZE_U + CALL_STACK_SIZE_U];
 
-static inline void move_globals(uint64_t nglobals) {
-  OPERAND_STACK_SIZE_BEGIN += nglobals;
-  fp += nglobals;
+static uint64_t main_addr;
+
+static uint64_t nargs_in_current_function = 2;
+static uint64_t nlocals_in_current_function = 0;
+static uint64_t nglobals;
+constexpr uint64_t NUTIL_VALUES = 3;
+
+
+static inline void move_globals(uint64_t number_of_globals) {
+  nglobals = number_of_globals;
+  CALL_STACK_BEGIN += nglobals;
   sp += nglobals;
-  operand_stack_end += nglobals;
 }
 
 static inline uint64_t *get_global(uint64_t i) {
-  return (OPERAND_STACK_SIZE_BEGIN - i - 1); // file->global_ptr + i;
+  return (GLOBALS_BEGIN + i); // file->global_ptr + i;
 }
 
 static inline uint64_t pop_operand() {
-  [[unlikely]] if (operand_stack_end == OPERAND_STACK_SIZE_BEGIN) {
+  [[unlikely]] if (reinterpret_cast<uint64_t *>(operand_stack_end) == OPERAND_STACK_BEGIN_INCL) {
     throw std::logic_error("op stack underflow");
   }
-  --operand_stack_end;
-  uint64_t result = *operand_stack_end;
-  *operand_stack_end = 0;
+  ++operand_stack_end;
+  uint64_t result = *reinterpret_cast<uint64_t *>(operand_stack_end);
   return result;
 }
 
 static inline void push_operand(uint64_t operand) {
-  *operand_stack_end = operand;
-  ++operand_stack_end; 
-  [[unlikely]] if (operand_stack_end >= OPERAND_STACK_SIZE_END) {
+  [[unlikely]] if (reinterpret_cast<uint64_t *>(operand_stack_end) < OPERAND_STACK_END_INCL) {
     throw std::logic_error("op stack overflow");
   }
+  *reinterpret_cast<uint64_t *>(operand_stack_end) = operand;
+  --operand_stack_end; 
+}
+
+static inline void main_begin() {
+  sp += (nargs_in_current_function + NUTIL_VALUES);
 }
 
 static inline void call_begin(uint64_t nargs, const char *next) {
-  [[unlikely]] if (sp + nargs + 4 >= CALL_STACK_SIZE_END) {
+  [[unlikely]] if (reinterpret_cast<uint64_t *>(sp) + nargs + 4 >= CALL_STACK_END) {
     throw std::logic_error("call stack overflow");
   }
   for (int i = 0; i < nargs; ++i) {
-    sp[i] = pop_operand();
+    reinterpret_cast<uint64_t *>(sp)[i] = pop_operand();
   }
-  sp[nargs] = reinterpret_cast<uint64_t>(next);
-  sp[nargs + 1] = reinterpret_cast<uint64_t>(sp);
-  sp[nargs + 2] = reinterpret_cast<uint64_t>(fp);
-  sp[nargs + 3] = *closure_address;
-  *closure_address = 0;
-  fp = &sp[nargs];
+  reinterpret_cast<uint64_t *>(sp)[nargs] = reinterpret_cast<uint64_t>(next);
+  reinterpret_cast<uint64_t *>(sp)[nargs + 1] = nargs_in_current_function;
+  reinterpret_cast<uint64_t *>(sp)[nargs + 2] = nlocals_in_current_function;
+  reinterpret_cast<uint64_t *>(sp)[nargs + 3] = *CLOSURE_ADDRESS;
+  *CLOSURE_ADDRESS = 0;
   sp += (nargs + 4);
+  nargs_in_current_function = nargs;
 }
 
 static inline void alloc_locals(uint64_t nlocals) {
   sp += nlocals;
-  [[unlikely]] if (sp >= CALL_STACK_SIZE_END) {
+  [[unlikely]] if (reinterpret_cast<uint64_t *>(sp) >= CALL_STACK_END) {
     throw std::logic_error("call stack overflow");
   }
 }
 
 static inline uint64_t *get_local(uint64_t i) {
-  return (sp - i - 1);
+  return reinterpret_cast<uint64_t *>(sp - i - 1);
 }
 
 #ifndef NDEBUG // for debug only
 static void print_stacks() {
   fprintf(stderr, "\n\nstack:");
-  for (uint64_t *i = operand_stack_end - 1; i >= OPERAND_STACK_SIZE_BEGIN; --i) {
+  for (uint64_t *i = reinterpret_cast<uint64_t *>(operand_stack_end) - 1; i <= OPERAND_STACK_BEGIN_INCL; ++i) {
     fprintf(stderr, " %li ", *i);
   }
-
-  fprintf(stderr, "\n\ngloba + clos:");
-  for (uint64_t *i = OPERAND_STACK_SIZE_BEGIN - 1; i >= memory_to_simulation + ALIGNMENT_FEATURE; --i) {
+  fprintf(stderr, "\n\nglobals:");
+  for (uint64_t *i = GLOBALS_BEGIN; i < GLOBALS_END; ++i) {
     fprintf(stderr, " %li ", *i);
   }
-
+  fprintf(stderr, "\n\nclosure:");
+  fprintf(stderr, " %li ", *CLOSURE_ADDRESS);
   fprintf(stderr, "\n\ncall stack:");
-  for (uint64_t *i = sp - 1; i >= CALL_STACK_SIZE_BEGIN; --i) {
+  for (uint64_t *i = reinterpret_cast<uint64_t *>(sp) - 1; i >= CALL_STACK_BEGIN; --i) {
     fprintf(stderr, " %li (%lx) ", *i, *i);
   }
   fprintf(stderr, "\n\n");
@@ -468,26 +479,24 @@ static void print_stacks() {
 #endif
 
 static inline uint64_t *get_arg(uint64_t i) {
-  return (fp - i - 1);
+  return reinterpret_cast<uint64_t *>(sp - nlocals_in_current_function - NUTIL_VALUES - i - 1);
 }
 
 static inline uint64_t *get_closure(uint64_t i) {
-  if (i >= LEN(TO_DATA((*closure_address))) - 1) {
+  if (*CLOSURE_ADDRESS == 0 || i >= LEN(TO_DATA((*CLOSURE_ADDRESS))) - 1) {
     [[unlikely]] throw std::logic_error("bad access to closure");
   }
-  return reinterpret_cast<uint64_t *>(*closure_address) + (i + 1); //  Value.Access i -> I (word_size * (i + 1), r15)
+  return reinterpret_cast<uint64_t *>(*CLOSURE_ADDRESS) + (i + 1); //  Value.Access i -> I (word_size * (i + 1), r15)
 }
 
 static inline const char *call_end() {
-  const char *result = reinterpret_cast<char *>(fp[0]);
-  uint64_t *need_sp = reinterpret_cast<uint64_t *>(fp[1]);
-  *closure_address = fp[3];
-  fp = reinterpret_cast<uint64_t *>(fp[2]);
-  while (sp > need_sp && need_sp != 0) {
-    --sp;
-    *sp = 0;
-  }
-  sp = need_sp;
+  const char *result = reinterpret_cast<char *>(sp - nlocals_in_current_function - NUTIL_VALUES - 1);
+  uint64_t nargs = *reinterpret_cast<uint64_t *>(sp - nlocals_in_current_function - 3);
+  uint64_t nlocals = *reinterpret_cast<uint64_t *>(sp - nlocals_in_current_function - 2);
+  *CLOSURE_ADDRESS = *reinterpret_cast<uint64_t *>(sp - nlocals_in_current_function - 1);
+  sp -= (nlocals_in_current_function + nargs_in_current_function + NUTIL_VALUES);
+  nlocals_in_current_function = nlocals;
+  nargs_in_current_function = nargs;
   return result;
 }
 
@@ -529,7 +538,7 @@ static inline const char *safe_get_ip(const char* ip, size_t size) {
 
 #undef INT
 #undef BYTE
-#define INT (ip += sizeof(uint32_t), *(uint32_t *)safe_get_ip(ip - sizeof(uint32_t), sizeof(uint32_t)))
+#define INT (ip += sizeof(uint32_t), *(const uint32_t *)safe_get_ip(ip - sizeof(uint32_t), sizeof(uint32_t)))
 #define BYTE (ip += 1, *safe_get_ip(ip - 1, 1))
 
 static void check_file(FILE *f = stderr)
@@ -559,7 +568,7 @@ static void check_file(FILE *f = stderr)
     [[unlikely]] if (!was_begin && (h != 5 || l != 2 && l != 3) && h != 15) {
       throw std::logic_error("should be BEGIN instruction");
     }
-    bool is_main_begin = current_addr == main_ptr;
+    bool is_main_begin = current_addr == main_addr;
     [[unlikely]] if (is_main_begin && (h != 5 || l != 2)) {
       throw std::logic_error("main should point to BEGIN");
     }
@@ -584,7 +593,7 @@ static void check_file(FILE *f = stderr)
       [[unlikely]] if (was_begin) {
         throw std::logic_error("invalid file: <end> before END");
       }
-      [[unlikely]] if (main_ptr + file->code_ptr >= ip) {
+      [[unlikely]] if (main_addr + file->code_ptr >= ip) {
         throw std::logic_error("main points outside the code");
       }
       [[unlikely]] if (!forward_calls.empty()) {
@@ -667,7 +676,7 @@ static void check_file(FILE *f = stderr)
         FAIL;
       }
       break;
-    [[unlikely]] case 3: // LDA
+    case 3: // LDA
       throw std::logic_error("LDA is temporary prohibited");
     case 2: // LD
     case 4: { // ST
@@ -862,11 +871,10 @@ stop:
 
 static void run_interpreter()
 {
-  uint64_t arg_numbers_checker = 2;
-  const char *ip = main_ptr + file->code_ptr;
+  const char *ip = main_addr + file->code_ptr;
   __gc_init();
-  __gc_stack_bottom = reinterpret_cast<size_t>(memory_to_simulation + sizeof(memory_to_simulation) / sizeof(memory_to_simulation[0]) - sizeof(void *));
-  __gc_stack_top = (reinterpret_cast<size_t>(memory_to_simulation) + ALIGNMENT_FEATURE - sizeof(void *)) & (~0xFull);
+  __gc_stack_bottom = reinterpret_cast<size_t>(CALL_STACK_BEGIN);
+  __gc_stack_top = reinterpret_cast<size_t>(OPERAND_STACK_BEGIN_INCL);
   move_globals(file->global_area_size);
   do
   {
@@ -1061,7 +1069,7 @@ static void run_interpreter()
       case 2: { // BEGIN
         uint64_t nargs = INT;
         uint64_t nlocals = INT;
-        [[unlikely]] if (nargs != arg_numbers_checker) {
+        [[unlikely]] if (nargs != nargs_in_current_function) {
           throw std::logic_error("incorrect argument number");
         }
         alloc_locals(nlocals);
@@ -1071,7 +1079,7 @@ static void run_interpreter()
       case 3: { // CBEGIN
         uint64_t nargs = INT;
         uint64_t nlocals = INT;
-        [[unlikely]] if (nargs != arg_numbers_checker) {
+        [[unlikely]] if (nargs != nargs_in_current_function) {
           throw std::logic_error("incorrect argument number");
         }
         alloc_locals(nlocals);
@@ -1118,12 +1126,11 @@ static void run_interpreter()
       case 5: { // CALLC
         uint64_t args_number = INT;
         call_begin(args_number, ip);
-        *closure_address = pop_operand();
-        [[unlikely]] if (!Bclosure_tag_patt(reinterpret_cast<void *>(*closure_address))) {
+        *CLOSURE_ADDRESS = pop_operand();
+        [[unlikely]] if (!Bclosure_tag_patt(reinterpret_cast<void *>(*CLOSURE_ADDRESS))) {
           throw std::logic_error("closure expected");
         }
-        arg_numbers_checker = args_number;
-        ip = *reinterpret_cast<uint64_t *>(*closure_address) + file->code_ptr;
+        ip = *reinterpret_cast<uint64_t *>(*CLOSURE_ADDRESS) + file->code_ptr;
         break;
       }
 
@@ -1131,7 +1138,6 @@ static void run_interpreter()
         uint64_t addr = INT;
         uint64_t args_number = INT;
         call_begin(args_number, ip);
-        arg_numbers_checker = args_number;
         ip = addr + file->code_ptr;
         break;
       }
@@ -1240,7 +1246,7 @@ static void run_interpreter()
     }
     break;
     }
-  } while (sp != nullptr);
+  } while (ip != nullptr);
   __shutdown();
 }
 
@@ -1251,7 +1257,7 @@ static void find_main()
     const char *name =  get_public_name(file, i);
     uint64_t offset = get_public_offset(file, i);
     if (std::strcmp(name, "main") == 0) {
-      main_ptr = (offset);
+      main_addr = (offset);
       found = true;
       break;
     }
