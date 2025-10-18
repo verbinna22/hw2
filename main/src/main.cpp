@@ -49,12 +49,12 @@ extern size_t __gc_stack_top, __gc_stack_bottom;
 typedef struct
 {
   const char *string_ptr;          /* A pointer to the beginning of the string table */
-  const int *public_ptr;           /* A pointer to the beginning of publics table    */
+  const uint32_t *public_ptr;           /* A pointer to the beginning of publics table    */
   const char *code_ptr;            /* A pointer to the bytecode itself               */
-  const int *global_ptr;           /* A pointer to the global area                   */
-  int stringtab_size;        /* The size (in bytes) of the string table        */
-  int global_area_size;      /* The size (in words) of global area             */
-  int public_symbols_number; /* The number of public symbols                   */
+  const uint32_t *global_ptr;           /* A pointer to the global area                   */
+  uint32_t stringtab_size;        /* The size (in bytes) of the string table        */
+  uint32_t global_area_size;      /* The size (in words) of global area             */
+  uint32_t public_symbols_number; /* The number of public symbols                   */
   const char buffer[0];
 } bytefile;
 
@@ -63,7 +63,7 @@ static const bytefile *file;
 static const char *file_name;
 
 /* Gets a string from a string table by an index */
-static inline const char *get_string(const bytefile *f, int pos)
+static inline const char *get_string(const bytefile *f, uint32_t pos)
 {
   [[unlikely]] if (pos >= f->stringtab_size) {
     throw std::logic_error("incorrect string offset");
@@ -73,13 +73,13 @@ static inline const char *get_string(const bytefile *f, int pos)
 }
 
 /* Gets a name for a public symbol */
-static inline const char *get_public_name(const bytefile *f, int i)
+static inline const char *get_public_name(const bytefile *f, uint32_t i)
 {
   return get_string(f, f->public_ptr[i * 2]);
 }
 
 /* Gets an offset for a publie symbol */
-static inline int get_public_offset(const bytefile *f, int i)
+static inline uint32_t get_public_offset(const bytefile *f, uint32_t i)
 {
   return f->public_ptr[i * 2 + 1];
 }
@@ -118,8 +118,8 @@ static const bytefile *read_file(const char *fname)
 
   fclose(f);
 
-  file->string_ptr = &file->buffer[file->public_symbols_number * 2 * sizeof(int)];
-  file->public_ptr = (int *)file->buffer;
+  file->string_ptr = &file->buffer[file->public_symbols_number * 2 * sizeof(uint32_t)];
+  file->public_ptr = (uint32_t *)file->buffer;
   file->code_ptr = &file->string_ptr[file->stringtab_size];
   file->global_ptr = nullptr;
 
@@ -139,7 +139,7 @@ static const bytefile *read_file(const char *fname)
   return file;
 }
 
-#define INT (ip += sizeof(int), *(int *)(ip - sizeof(int)))
+#define INT (ip += sizeof(uint32_t), *(uint32_t *)(ip - sizeof(uint32_t)))
 #define BYTE *ip++
 #define STRING get_string(file, INT)
 #define FAIL failure("ERROR: invalid opcode %d-%d\n", h, l)
@@ -271,7 +271,7 @@ static void print_code(char *ip, FILE *f = stderr)
       case 4:
         fprintf(f, "CLOSURE\t0x%.8x", INT);
         {
-          int n = INT;
+          uint32_t n = INT;
           for (int i = 0; i < n; i++)
           {
             switch (BYTE)
@@ -520,7 +520,7 @@ static inline const char *safe_get_ip(const char* ip, size_t size) {
 
 #undef INT
 #undef BYTE
-#define INT (ip += sizeof(int), *(int *)safe_get_ip(ip - sizeof(int), sizeof(int)))
+#define INT (ip += sizeof(uint32_t), *(uint32_t *)safe_get_ip(ip - sizeof(uint32_t), sizeof(uint32_t)))
 #define BYTE (ip += 1, *safe_get_ip(ip - 1, 1))
 
 static void check_file(FILE *f = stderr)
@@ -727,7 +727,7 @@ static void check_file(FILE *f = stderr)
       case 4: { // CLOSURE
         uint64_t addr = INT;
         {
-          int n = INT;
+          uint32_t n = INT;
           CHECK_NUMBER_IS_ADEQUATE(n);
           for (int i = 0; i < n; i++)
           {
@@ -853,7 +853,7 @@ stop:
 
 #undef INT
 #undef BYTE
-#define INT (ip += sizeof(int), *(int *)(ip - sizeof(int)))
+#define INT (ip += sizeof(uint32_t), *(uint32_t *)(ip - sizeof(uint32_t)))
 #define BYTE *ip++
 
 static void run_interpreter()
@@ -1076,7 +1076,7 @@ static void run_interpreter()
 
       case 4: { // CLOSURE
         uint64_t addr = INT;
-          int n = INT;
+          uint32_t n = INT;
           aint args[n + 1];
           {
           args[0] = addr;
