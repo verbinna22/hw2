@@ -405,11 +405,26 @@ static inline aint pop_operand () {
   return result;
 }
 
+static inline void check_has_operands_on_stack (size_t n) {
+  if (OPERAND_STACK_BEGIN_INCL - reinterpret_cast<aint *>(operand_stack_end) < n) [[unlikely]] {
+    throw std::logic_error("op stack underflow");
+  }
+}
+
+static inline void stack_reorder(size_t n) {
+  aint *end = reinterpret_cast<aint *>(operand_stack_end) + 1;
+  aint *begin = reinterpret_cast<aint *>(operand_stack_end) + n;
+  while (begin > end) {
+    std::swap(*begin, *end);
+    --begin;
+    ++end;
+  }
+}
+
 static inline void push_operand (aint operand) {
   if (reinterpret_cast<aint *>(operand_stack_end) < OPERAND_STACK_END_INCL) [[unlikely]] {
     throw std::logic_error("op stack overflow");
   }
-  //fprintf(stderr, "---%lx %lx\n", operand_stack_end, OPERAND_STACK_BEGIN_INCL);//
   *reinterpret_cast<aint *>(operand_stack_end) = operand;
   operand_stack_end -= sizeof(aint);
 }
@@ -523,10 +538,10 @@ static void run_interpreter () {
   move_globals(file->global_area_size);
   main_begin();
   do {
-    //print_code(ip);
+    // print_code(ip);
     char x = BYTE, h = (x & 0xF0) >> 4, l = x & 0x0F;
     //dump_heap();
-    //print_stacks();
+    // print_stacks();
     if (expected_begin
         && (static_cast<HightSymbols>(h) != HightSymbols::SECOND_GROUP
             || static_cast<SecondGroup>(l) != SecondGroup::BEGIN
@@ -585,14 +600,12 @@ static void run_interpreter () {
           case FirstGroup::SEXP: {   // SEXP
             aint          ptr = reinterpret_cast<aint>(STRING);
             aint          n   = INT;
-            std::vector<aint> tmp_array;
-            try {
-              tmp_array.resize(n + 1);
-            } catch (std::bad_alloc &) { throw std::logic_error("too long SEXP to allocate"); }
-            tmp_array[n] = LtagHash(reinterpret_cast<char *>(ptr));
-            for (int i = n - 1; i >= 0; --i) { tmp_array[i] = pop_operand(); }
+            check_has_operands_on_stack(n);
+            push_operand(LtagHash(reinterpret_cast<char *>(ptr)));
+            stack_reorder(n + 1);
             aint allocated_value = reinterpret_cast<aint>(
-                Bsexp(tmp_array.data(), static_cast<aint>(make_boxed(n + 1))));
+                Bsexp(reinterpret_cast<aint *>(operand_stack_end) + 1, static_cast<aint>(make_boxed(n + 1))));
+            for (int i = 0; i < n + 1; ++i) { pop_operand(); }
             push_operand(allocated_value);
             break;
           }
@@ -736,39 +749,38 @@ static void run_interpreter () {
           case SecondGroup::CLOSURE: {   // CLOSURE
             size_t          addr = INT;
             uint32_t          n    = INT;
-            std::vector<aint> args;
-            try {
-              args.resize(n + 1);
-            } catch (std::bad_alloc &) { throw std::logic_error("too long CLOSURE to allocate"); }
             {
-              args[0] = addr;
+              push_operand(addr);
               for (int i = 0; i < n; i++) {
                 switch (static_cast<Locs>(BYTE)) {
                   case Locs::GLOB: {
                     size_t j  = INT;
-                    args[i + 1] = *get_global(j);
+                    push_operand(*get_global(j));
                     break;
                   }
                   case Locs::LOC: {
                     size_t j  = INT;
-                    args[i + 1] = *get_local(j);
+                    push_operand(*get_local(j));
                     break;
                   }
                   case Locs::ARG: {
                     size_t j  = INT;
-                    args[i + 1] = *get_arg(j);
+                    push_operand(*get_arg(j));
                     break;
                   }
                   case Locs::CLOS: {
                     size_t j  = INT;
-                    args[i + 1] = *get_closure(j);
+                    push_operand(*get_closure(j));
                     break;
                   }
                   default: throw std::logic_error("invalid loc");
                 }
               }
             };
-            push_operand(reinterpret_cast<aint>(Bclosure(args.data(), make_boxed(n))));
+            stack_reorder(n + 1);
+            aint value = reinterpret_cast<aint>(Bclosure(reinterpret_cast<aint *>(operand_stack_end) + 1, make_boxed(n)));
+            for (int i = 0; i < n + 1; ++i) pop_operand();
+            push_operand(value);
             break;
           }
 
@@ -890,9 +902,11 @@ static void run_interpreter () {
 
           case SpecialCalls::BARRAY: {   // Barray
             aint n = INT;
-            aint     args[n];
-            for (int i = n - 1; i >= 0; --i) { args[i] = pop_operand(); }
-            push_operand(reinterpret_cast<aint>(Barray(args, make_boxed(n))));
+            check_has_operands_on_stack(n);
+            stack_reorder(n);
+            aint value = reinterpret_cast<aint>(Barray(reinterpret_cast<aint *>(operand_stack_end) + 1, make_boxed(n)));
+            for (int i = 0; i < n; ++i) { pop_operand(); }
+            push_operand(value);
             break;
           }
           default: FAIL;
