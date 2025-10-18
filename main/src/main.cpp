@@ -4,12 +4,9 @@
 #include <cstddef>
 #include <cstdint>
 #include <cstring>
-#include <memory>
 #include <new>
 #include <stdexcept>
 #include <stdint.h>
-#include <unordered_map>
-#include <unordered_set>
 #include <vector>
 
 extern "C" {
@@ -599,7 +596,6 @@ static inline const char *call_end() {
   sp -= (nlocals_in_current_function + nargs_in_current_function + NUTIL_VALUES) * sizeof(uint64_t);
   nlocals_in_current_function = nlocals;
   nargs_in_current_function = nargs;
-  //fprintf(stderr, "nl: %lu na: %lu ng: %lu\n", nlocals_in_current_function, nargs_in_current_function, nglobals);///
   return result;
 }
 
@@ -616,21 +612,6 @@ static inline void check_unboxed(uint64_t n, const std::string &message) {
     throw std::logic_error(message);
   }
 }
-// TODO remove unused macro
-#define CHECK_ARGS_NUMBER(addr, arg_number) \
-        do { if (addr_to_args_number.find(addr) != addr_to_args_number.end()) { \
-          [[unlikely]] if (addr_to_args_number[addr] != (arg_number)) { \
-            throw std::logic_error("incorrect args number"); \
-          } \
-        } else { \
-          addr_to_args_number[addr] = (arg_number); \
-        } } while(0)
-
-#define CHECK_LOCALS(i) do { [[unlikely]] if ((i) >= locals) throw std::logic_error("invalid local dereference"); } while(0)
-#define CHECK_ARGS(i) do { [[unlikely]] if ((i) >= args) throw std::logic_error("invalid arg dereference"); } while(0)
-#define CHECK_GLOBAL(i) do { [[unlikely]] if ((i) >= globals) throw std::logic_error("invalid global dereference"); } while(0)
-#define CHECK_JMP_ADDR(addr) do { if (addr <= current_addr) { [[unlikely]] if (addr <= addr_of_function_begin) throw std::logic_error("invalid jump"); } else { addrs_jump_in_function.insert(addr); } } while (0)
-#define CHECK_NUMBER_IS_ADEQUATE(n) do { [[unlikely]] if (n > 256) throw std::logic_error("inadequate constant"); } while (0)
 
 static inline const char *safe_get_ip(const char* ip, size_t size) {
   [[unlikely]] if (ip + size - 1 >= (char *)file + bytefile_size || ip < (char *)file) {
@@ -654,12 +635,12 @@ static void run_interpreter()
   main_begin();
   do
   {
-    //print_code(ip);///
+    //print_code(ip);
     char x = BYTE,
          h = (x & 0xF0) >> 4,
          l = x & 0x0F;
-    // dump_heap();///
-    //print_stacks();///
+    //dump_heap();
+    //print_stacks();
     if (expected_begin && (static_cast<HightSymbols>(h) != HightSymbols::SECOND_GROUP ||
         static_cast<SecondGroup>(l) != SecondGroup::BEGIN && static_cast<SecondGroup>(l) != SecondGroup::CBEGIN)) {
       throw std::logic_error("BEGIN or CBEGIN was expected");
@@ -744,7 +725,8 @@ static void run_interpreter()
         break;
       }
       
-      case FirstGroup::STI: // TODO
+      case FirstGroup::STI:
+        throw std::logic_error("STI is temporary prohibited");
 
       case FirstGroup::JMP: { // JMP
         uint64_t addr = INT;
@@ -814,7 +796,8 @@ static void run_interpreter()
       push_operand(variable);
       break;
     }
-    case HightSymbols::LDA: // TODO
+    case HightSymbols::LDA:
+      throw std::logic_error("LDA is temporary prohibited");
     case HightSymbols::ST: {// ST
       uint64_t i = INT;
       uint64_t value = pop_operand();
@@ -863,7 +846,7 @@ static void run_interpreter()
         }
         break;
       }
-// TODO: remove ////
+
       case SecondGroup::BEGIN: { // BEGIN
         uint64_t nargs = INT;
         uint64_t nlocals = INT;
@@ -1071,7 +1054,6 @@ static void run_interpreter()
     default:
       FAIL;
     }
-    //fprintf(stderr, "\n%lx\n", ip); ///
   } while (ip != nullptr);
   __shutdown();
 }
