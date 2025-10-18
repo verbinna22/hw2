@@ -118,26 +118,28 @@ static const bytefile *read_file(const char *fname)
 
   fclose(f);
 
-  file->string_ptr = &file->buffer[file->public_symbols_number * 2 * sizeof(uint32_t)];
+  constexpr size_t SIZE_OF_PUBLIC_SYMBOL = 2 * sizeof(uint32_t);
+  size_t raw_size = size - 3 * sizeof(uint32_t);
+  // buffer: 3 * uint32_t | public symbols | string table | code
+  if (file->public_symbols_number * SIZE_OF_PUBLIC_SYMBOL >= raw_size) {
+    throw std::logic_error("public_symbols_number field is corrupted");
+  }
+  if (file->public_symbols_number * SIZE_OF_PUBLIC_SYMBOL + file->stringtab_size >= raw_size) {
+    throw std::logic_error("stringtab_size field is corrupted");
+  }
+  file->string_ptr = &file->buffer[file->public_symbols_number * SIZE_OF_PUBLIC_SYMBOL];
   file->public_ptr = (uint32_t *)file->buffer;
   file->code_ptr = &file->string_ptr[file->stringtab_size];
   file->global_ptr = nullptr;
 
-  if (file->string_ptr >= (char *)file + bytefile_size ||
-    (char *)file->public_ptr >= (char *)file + bytefile_size ||
-    file->code_ptr >= (char *)file + bytefile_size ||
-    file->string_ptr + file->stringtab_size > (char *)file + bytefile_size ||
-    file->stringtab_size > bytefile_size
-  ) {
-    throw std::logic_error("bad file format");
-  }
-
   if (file->stringtab_size > 0 && file->string_ptr[file->stringtab_size - 1] != 0) {
-    throw std::logic_error("string is not in file");
+    throw std::logic_error("stringtab is corrupted");
   }
 
   return file;
 }
+
+#ifndef NDEBUG // for debug only
 
 #define INT (ip += sizeof(uint32_t), *(uint32_t *)(ip - sizeof(uint32_t)))
 #define BYTE *ip++
@@ -367,6 +369,7 @@ static void print_code(char *ip, FILE *f = stderr)
 
     fprintf(f, "\n");
 }
+#endif
 
 constexpr uint64_t OPERAND_STACK_SIZE_U = 1024 * 1024;
 constexpr uint64_t CALL_STACK_SIZE_U = 1024 * 1024;
