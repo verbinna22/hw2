@@ -64,7 +64,7 @@ static const char     *file_name;
 
 /* Gets a string from a string table by an index */
 static inline const char *get_string (const bytefile *f, uint32_t pos) {
-  [[unlikely]] if (pos >= f->stringtab_size) { throw std::logic_error("incorrect string offset"); }
+  if (pos >= f->stringtab_size) [[unlikely]] { throw std::logic_error("incorrect string offset"); }
   const char *string = &f->string_ptr[pos];
   return string;
 }
@@ -384,7 +384,7 @@ static uint64_t    nglobals;
 constexpr uint64_t NUTIL_VALUES = 4;
 
 static inline void move_globals (uint64_t number_of_globals) {
-  [[unlikely]] if (CALL_STACK_BEGIN + number_of_globals > CALL_STACK_END) {
+  if (CALL_STACK_BEGIN + number_of_globals > CALL_STACK_END) [[unlikely]] {
     throw std::logic_error("too much globals");
   }
   nglobals = number_of_globals;
@@ -393,12 +393,12 @@ static inline void move_globals (uint64_t number_of_globals) {
 }
 
 static inline uint64_t *get_global (uint64_t i) {
-  [[unlikely]] if (i >= nglobals) { throw std::logic_error("invalid index of global"); }
+  if (i >= nglobals) [[unlikely]] { throw std::logic_error("invalid index of global"); }
   return (GLOBALS_BEGIN + i);   // file->global_ptr + i;
 }
 
 static inline uint64_t pop_operand () {
-  [[unlikely]] if (reinterpret_cast<uint64_t *>(operand_stack_end) == OPERAND_STACK_BEGIN_INCL) {
+  if (reinterpret_cast<uint64_t *>(operand_stack_end) == OPERAND_STACK_BEGIN_INCL) [[unlikely]] {
     throw std::logic_error("op stack underflow");
   }
   operand_stack_end += sizeof(uint64_t);
@@ -407,7 +407,7 @@ static inline uint64_t pop_operand () {
 }
 
 static inline void push_operand (uint64_t operand) {
-  [[unlikely]] if (reinterpret_cast<uint64_t *>(operand_stack_end) < OPERAND_STACK_END_INCL) {
+  if (reinterpret_cast<uint64_t *>(operand_stack_end) < OPERAND_STACK_END_INCL) [[unlikely]] {
     throw std::logic_error("op stack overflow");
   }
   //fprintf(stderr, "---%lx %lx\n", operand_stack_end, OPERAND_STACK_BEGIN_INCL);//
@@ -421,7 +421,7 @@ static inline void main_begin () {
 }
 
 static inline void call_begin (uint64_t nargs, const char *next) {
-  [[unlikely]] if (reinterpret_cast<uint64_t *>(sp) + nargs + NUTIL_VALUES >= CALL_STACK_END) {
+  if (reinterpret_cast<uint64_t *>(sp) + nargs + NUTIL_VALUES >= CALL_STACK_END) [[unlikely]] {
     throw std::logic_error("call stack overflow");
   }
   for (int i = 0; i < nargs; ++i) { reinterpret_cast<uint64_t *>(sp)[i] = pop_operand(); }
@@ -436,14 +436,14 @@ static inline void call_begin (uint64_t nargs, const char *next) {
 
 static inline void alloc_locals (uint64_t nlocals) {
   sp += nlocals * sizeof(uint64_t);
-  [[unlikely]] if (reinterpret_cast<uint64_t *>(sp) >= CALL_STACK_END) {
+  if (reinterpret_cast<uint64_t *>(sp) >= CALL_STACK_END) [[unlikely]] {
     throw std::logic_error("call stack overflow");
   }
   nlocals_in_current_function = nlocals;
 }
 
 static inline uint64_t *get_local (uint64_t i) {
-  [[unlikely]] if (i >= nlocals_in_current_function) {
+  if (i >= nlocals_in_current_function) [[unlikely]] {
     throw std::logic_error("invalid index of local");
   }
   return reinterpret_cast<uint64_t *>(sp - (i + 1) * sizeof(uint64_t));
@@ -470,15 +470,15 @@ static void print_stacks () {
 #endif
 
 static inline uint64_t *get_arg (uint64_t i) {
-  [[unlikely]] if (i >= nargs_in_current_function) {
+  if (i >= nargs_in_current_function) [[unlikely]] {
     throw std::logic_error("invalid index of arg");
   }
   return (reinterpret_cast<uint64_t *>(sp) - nlocals_in_current_function - NUTIL_VALUES - i - 1);
 }
 
 static inline uint64_t *get_closure (uint64_t i) {
-  if (*CLOSURE_ADDRESS == 0 || i >= LEN(TO_DATA((*CLOSURE_ADDRESS))) - 1) {
-    [[unlikely]] throw std::logic_error("bad access to closure");
+  if (*CLOSURE_ADDRESS == 0 || i >= LEN(TO_DATA((*CLOSURE_ADDRESS))) - 1) [[unlikely]] {
+    throw std::logic_error("bad access to closure");
   }
   return reinterpret_cast<uint64_t *>(*CLOSURE_ADDRESS)
          + (i + 1);   //  Value.Access i -> I (word_size * (i + 1), r15)
@@ -501,11 +501,11 @@ static inline uint64_t make_boxed (uint64_t n) { return (n << 1) + 1; }
 static inline uint64_t make_unboxed (int64_t n) { return n >> 1; }
 
 static inline void check_unboxed (uint64_t n, const std::string &message) {
-  [[unlikely]] if (!(n & 1)) { throw std::logic_error(message); }
+  if (!(n & 1)) [[unlikely]] { throw std::logic_error(message); }
 }
 
 static inline const char *safe_get_ip (const char *ip, size_t size) {
-  [[unlikely]] if (ip + size - 1 >= (char *)file + bytefile_size || ip < (char *)file) {
+  if (ip + size - 1 >= (char *)file + bytefile_size || ip < (char *)file) [[unlikely]] {
     throw std::logic_error("bad ip");
   }
   return ip;
@@ -563,7 +563,7 @@ static void run_interpreter () {
           case Binops::OR: result = (second || first); break;
           default: FAIL;
         }
-        push_operand((result << 1) + 1);
+        push_operand(make_boxed(result));
         break;
       }
 
@@ -713,9 +713,9 @@ static void run_interpreter () {
           case SecondGroup::BEGIN: {   // BEGIN
             uint64_t nargs   = INT;
             uint64_t nlocals = INT;
-            [[unlikely]] if (!expected_begin) { throw std::logic_error("BEGIN was not expected"); }
+            if (!expected_begin) [[unlikely]] { throw std::logic_error("BEGIN was not expected"); }
             expected_begin = false;
-            [[unlikely]] if (nargs != nargs_in_current_function) {
+            if (nargs != nargs_in_current_function) [[unlikely]] {
               throw std::logic_error("incorrect argument number");
             }
             alloc_locals(nlocals);
@@ -725,9 +725,9 @@ static void run_interpreter () {
           case SecondGroup::CBEGIN: {   // CBEGIN
             uint64_t nargs   = INT;
             uint64_t nlocals = INT;
-            [[unlikely]] if (!expected_begin) { throw std::logic_error("CBEGIN was not expected"); }
+            if (!expected_begin) [[unlikely]] { throw std::logic_error("CBEGIN was not expected"); }
             expected_begin = false;
-            [[unlikely]] if (nargs != nargs_in_current_function) {
+            if (nargs != nargs_in_current_function) [[unlikely]] {
               throw std::logic_error("incorrect argument number");
             }
             alloc_locals(nlocals);
@@ -778,7 +778,7 @@ static void run_interpreter () {
             expected_begin       = true;
             call_begin(args_number, ip);
             *CLOSURE_ADDRESS = pop_operand();
-            [[unlikely]] if (!Bclosure_tag_patt(reinterpret_cast<void *>(*CLOSURE_ADDRESS))) {
+            if (!Bclosure_tag_patt(reinterpret_cast<void *>(*CLOSURE_ADDRESS))) [[unlikely]] {
               throw std::logic_error("closure expected");
             }
             ip = *reinterpret_cast<uint64_t *>(*CLOSURE_ADDRESS) + file->code_ptr;
@@ -917,11 +917,11 @@ static void find_main () {
       break;
     }
   }
-  [[unlikely]] if (!found) { throw std::logic_error("file doesn't contain main function"); }
+  if (!found) [[unlikely]] { throw std::logic_error("file doesn't contain main function"); }
 }
 
 int main (int argc, const char *argv[]) {
-  [[unlikely]] if (argc != 2) {
+  if (argc != 2) [[unlikely]] {
     fprintf(stderr, "Error: should be 1 argument *.bc file!\n");
     std::exit(1);
   }
