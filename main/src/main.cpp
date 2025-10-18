@@ -660,12 +660,15 @@ static void run_interpreter()
          l = x & 0x0F;
     // dump_heap();///
     //print_stacks();///
-    if (expected_begin && (h != 5 || l != 2 && l != 3)) {
+    if (expected_begin && (static_cast<HightSymbols>(h) != HightSymbols::SECOND_GROUP ||
+        static_cast<SecondGroup>(l) != SecondGroup::BEGIN && static_cast<SecondGroup>(l) != SecondGroup::CBEGIN)) {
       throw std::logic_error("BEGIN or CBEGIN was expected");
     }
     switch (static_cast<HightSymbols>(h))
     {
     /* BINOP  must be valid*/
+    case HightSymbols::END:
+      throw std::logic_error("end of bytecode was reached");
     case HightSymbols::BINOP: {
       uint64_t result;
       uint64_t first = make_unboxed(pop_operand());
@@ -692,6 +695,8 @@ static void run_interpreter()
         case Binops::NEQ: result = (second != first); break;
         case Binops::AND: result = (second && first); break;
         case Binops::OR: result = (second || first); break;
+        default:
+          FAIL;
       }
       push_operand((result << 1) + 1);
       break;
@@ -780,6 +785,9 @@ static void run_interpreter()
         push_operand(reinterpret_cast<uint64_t>(Belem(reinterpret_cast<void *>(p), static_cast<aint>(i))));
         break;
       }
+
+      default:
+        FAIL;
       }
       break;
 
@@ -800,6 +808,8 @@ static void run_interpreter()
       case Locs::CLOS:
         variable = *get_closure(i);
         break;
+      default:
+        throw std::logic_error("invalid loc");
       }
       push_operand(variable);
       break;
@@ -827,6 +837,8 @@ static void run_interpreter()
         *get_closure(i) = value;
         break;
       }
+      default:
+        throw std::logic_error("invalid loc");
       }
       break;
     }
@@ -915,6 +927,8 @@ static void run_interpreter()
               args[i + 1] = *get_closure(j);
               break;
             }
+            default:
+              throw std::logic_error("invalid loc");
             }
           }
         };
@@ -974,6 +988,9 @@ static void run_interpreter()
         uint64_t n = INT;
         break;
       }
+
+      default:
+        FAIL;
       }
       break;
 
@@ -1003,6 +1020,8 @@ static void run_interpreter()
         case Patterns::CLOSURE: // fun
           push_operand(Bclosure_tag_patt(reinterpret_cast<void *>(pop_operand())));
           break;
+        default:
+          throw std::logic_error("invalid pattern");
       }
       break;
     }
@@ -1043,9 +1062,14 @@ static void run_interpreter()
         push_operand(reinterpret_cast<uint64_t>(Barray(args, make_boxed(n))));
         break;
       }
+      default:
+        FAIL;
       }
     }
     break;
+
+    default:
+      FAIL;
     }
     //fprintf(stderr, "\n%lx\n", ip); ///
   } while (ip != nullptr);
