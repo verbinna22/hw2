@@ -149,6 +149,88 @@ static const bytefile *read_file(const char *fname)
 #define STRING get_string(file, INT)
 #define FAIL failure("ERROR: invalid opcode %d-%d\n", h, l)
 
+enum class HightSymbols {
+  END = 15,
+  BINOP = 0,
+  FIRST_GROUP,
+  LD = 2,
+  LDA,
+  ST,
+  SECOND_GROUP,
+  PATT = 6,
+  CALL_SPECIAL,
+};
+
+enum class FirstGroup {
+  CONST,
+  STR,
+  SEXP,
+  STI,
+  STA,
+  JMP,
+  END,
+  RET,
+  DROP,
+  DUP,
+  SWAP,
+  ELEM,
+};
+
+enum class SecondGroup {
+  CJMPZ,
+  CJMPNZ,
+  BEGIN,
+  CBEGIN,
+  CLOSURE,
+  CALLC,
+  CALL,
+  TAG,
+  ARRAY,
+  FAIL_COMMAND,
+  LINE,
+};
+
+enum class Patterns {
+  STRCMP,
+  STR,
+  ARRAY,
+  SEXP,
+  BOXED,
+  UNBOXED,
+  CLOSURE,
+};
+
+enum class Locs {
+  GLOB = 0,
+  LOC,
+  ARG,
+  CLOS,
+};
+
+enum class SpecialCalls {
+  LREAD,
+  LWRITE,
+  LLENGTH,
+  LSTRING,
+  BARRAY,
+};
+
+enum class Binops {
+  PLUS = 1,
+  MINUS,
+  MUL,
+  DIV,
+  MOD,
+  LESS,
+  LEQ,
+  GT,
+  GEQ,
+  EQ,
+  NEQ,
+  AND,
+  OR,
+};
+
 #ifndef NDEBUG // for debug only
 #define INT (ip += sizeof(uint32_t), *(uint32_t *)(ip - sizeof(uint32_t)))
 #define BYTE *ip++
@@ -165,66 +247,66 @@ static void print_code(const char *ip, FILE *f = stderr)
 
     fprintf(f, "0x%.8x:\t", ip - file->code_ptr - 1);
 
-    switch (h)
+    switch (static_cast<HightSymbols>(h))
     {
-    case 15:
+    case HightSymbols::END:
       fprintf(f, "<end>");
       break;
 
     /* BINOP */
-    case 0:
+    case HightSymbols::BINOP:
       fprintf(f, "BINOP\t%s", ops[l - 1]);
       break;
 
-    case 1:
-      switch (l)
+    case HightSymbols::FIRST_GROUP:
+      switch (static_cast<FirstGroup>(l))
       {
-      case 0:
+      case FirstGroup::CONST:
         fprintf(f, "CONST\t%d", INT);
         break;
 
-      case 1:
+      case FirstGroup::STR:
         fprintf(f, "STRING\t%s", STRING);
         break;
 
-      case 2:
+      case FirstGroup::SEXP:
         fprintf(f, "SEXP\t%s ", STRING);
         fprintf(f, "%d", INT);
         break;
 
-      case 3:
+      case FirstGroup::STI:
         fprintf(f, "STI");
         break;
 
-      case 4:
+      case FirstGroup::STA:
         fprintf(f, "STA");
         break;
 
-      case 5:
+      case FirstGroup::JMP:
         fprintf(f, "JMP\t0x%.8x", INT);
         break;
 
-      case 6:
+      case FirstGroup::END:
         fprintf(f, "END");
         break;
 
-      case 7:
+      case FirstGroup::RET:
         fprintf(f, "RET");
         break;
 
-      case 8:
+      case FirstGroup::DROP:
         fprintf(f, "DROP");
         break;
 
-      case 9:
+      case FirstGroup::DUP:
         fprintf(f, "DUP");
         break;
 
-      case 10:
+      case FirstGroup::SWAP:
         fprintf(f, "SWAP");
         break;
 
-      case 11:
+      case FirstGroup::ELEM:
         fprintf(f, "ELEM");
         break;
 
@@ -233,22 +315,22 @@ static void print_code(const char *ip, FILE *f = stderr)
       }
       break;
 
-    case 2:
-    case 3:
-    case 4:
+    case HightSymbols::LD:
+    case HightSymbols::LDA:
+    case HightSymbols::ST:
       fprintf(f, "%s\t", lds[h - 2]);
-      switch (l)
+      switch (static_cast<Locs>(l))
       {
-      case 0:
+      case Locs::GLOB:
         fprintf(f, "G(%d)", INT);
         break;
-      case 1:
+      case Locs::LOC:
         fprintf(f, "L(%d)", INT);
         break;
-      case 2:
+      case Locs::ARG:
         fprintf(f, "A(%d)", INT);
         break;
-      case 3:
+      case Locs::CLOS:
         fprintf(f, "C(%d)", INT);
         break;
       default:
@@ -256,45 +338,45 @@ static void print_code(const char *ip, FILE *f = stderr)
       }
       break;
 
-    case 5:
-      switch (l)
+    case HightSymbols::SECOND_GROUP:
+      switch (static_cast<SecondGroup>(l))
       {
-      case 0:
+      case SecondGroup::CJMPZ:
         fprintf(f, "CJMPz\t0x%.8x", INT);
         break;
 
-      case 1:
+      case SecondGroup::CJMPNZ:
         fprintf(f, "CJMPnz\t0x%.8x", INT);
         break;
 
-      case 2:
+      case SecondGroup::BEGIN:
         fprintf(f, "BEGIN\t%d ", INT);
         fprintf(f, "%d", INT);
         break;
 
-      case 3:
+      case SecondGroup::CBEGIN:
         fprintf(f, "CBEGIN\t%d ", INT);
         fprintf(f, "%d", INT);
         break;
 
-      case 4:
+      case SecondGroup::CLOSURE:
         fprintf(f, "CLOSURE\t0x%.8x", INT);
         {
           uint32_t n = INT;
           for (int i = 0; i < n; i++)
           {
-            switch (BYTE)
+            switch (static_cast<Locs>(BYTE))
             {
-            case 0:
+            case Locs::GLOB:
               fprintf(f, "G(%d)", INT);
               break;
-            case 1:
+            case Locs::LOC:
               fprintf(f, "L(%d)", INT);
               break;
-            case 2:
+            case Locs::ARG:
               fprintf(f, "A(%d)", INT);
               break;
-            case 3:
+            case Locs::CLOS:
               fprintf(f, "C(%d)", INT);
               break;
             default:
@@ -304,30 +386,30 @@ static void print_code(const char *ip, FILE *f = stderr)
         };
         break;
 
-      case 5:
+      case SecondGroup::CALLC:
         fprintf(f, "CALLC\t%d", INT);
         break;
 
-      case 6:
+      case SecondGroup::CALL:
         fprintf(f, "CALL\t0x%.8x ", INT);
         fprintf(f, "%d", INT);
         break;
 
-      case 7:
+      case SecondGroup::TAG:
         fprintf(f, "TAG\t%s ", STRING);
         fprintf(f, "%d", INT);
         break;
 
-      case 8:
+      case SecondGroup::ARRAY:
         fprintf(f, "ARRAY\t%d", INT);
         break;
 
-      case 9:
+      case SecondGroup::FAIL_COMMAND:
         fprintf(f, "FAIL\t%d", INT);
         fprintf(f, "%d", INT);
         break;
 
-      case 10:
+      case SecondGroup::LINE:
         fprintf(f, "LINE\t%d", INT);
         break;
 
@@ -336,31 +418,31 @@ static void print_code(const char *ip, FILE *f = stderr)
       }
       break;
 
-    case 6:
+    case HightSymbols::PATT:
       fprintf(f, "PATT\t%s", pats[l]);
       break;
 
-    case 7:
+    case HightSymbols::CALL_SPECIAL:
     {
-      switch (l)
+      switch (static_cast<SpecialCalls>(l))
       {
-      case 0:
+      case SpecialCalls::LREAD:
         fprintf(f, "CALL\tLread");
         break;
 
-      case 1:
+      case SpecialCalls::LWRITE:
         fprintf(f, "CALL\tLwrite");
         break;
 
-      case 2:
+      case SpecialCalls::LLENGTH:
         fprintf(f, "CALL\tLlength");
         break;
 
-      case 3:
+      case SpecialCalls::LSTRING:
         fprintf(f, "CALL\tLstring");
         break;
 
-      case 4:
+      case SpecialCalls::BARRAY:
         fprintf(f, "CALL\tBarray\t%d", INT);
         break;
 
@@ -534,7 +616,7 @@ static inline void check_unboxed(uint64_t n, const std::string &message) {
     throw std::logic_error(message);
   }
 }
-
+// TODO remove unused macro
 #define CHECK_ARGS_NUMBER(addr, arg_number) \
         do { if (addr_to_args_number.find(addr) != addr_to_args_number.end()) { \
           [[unlikely]] if (addr_to_args_number[addr] != (arg_number)) { \
@@ -581,57 +663,57 @@ static void run_interpreter()
     if (expected_begin && (h != 5 || l != 2 && l != 3)) {
       throw std::logic_error("BEGIN or CBEGIN was expected");
     }
-    switch (h)
+    switch (static_cast<HightSymbols>(h))
     {
     /* BINOP  must be valid*/
-    case 0: {
+    case HightSymbols::BINOP: {
       uint64_t result;
       uint64_t first = make_unboxed(pop_operand());
       uint64_t second = make_unboxed(pop_operand());
-      switch (l) {
-        case 1: result = second + first; break;
-        case 2: result = second - first; break;
-        case 3: result = int64_t(second) * int64_t(first); break;
-        case 4:
+      switch (static_cast<Binops>(l)) {
+        case Binops::PLUS: result = second + first; break;
+        case Binops::MINUS: result = second - first; break;
+        case Binops::MUL: result = int64_t(second) * int64_t(first); break;
+        case Binops::DIV:
           if (first == 0) {
             throw std::logic_error("divide by zero");
           }
           result = int64_t(second) / int64_t(first); break;
-        case 5:
+        case Binops::MOD:
           if (first == 0) {
             throw std::logic_error("divide by zero");
           }
           result = int64_t(second) % int64_t(first); break;
-        case 6: result = int64_t(second) < int64_t(first); break;
-        case 7: result = int64_t(second) <= int64_t(first); break;
-        case 8: result = int64_t(second) > int64_t(first); break;
-        case 9: result = int64_t(second) >= int64_t(first); break;
-        case 10: result = (second == first); break;
-        case 11: result = (second != first); break;
-        case 12: result = (second && first); break;
-        case 13: result = (second || first); break;
+        case Binops::LESS: result = int64_t(second) < int64_t(first); break;
+        case Binops::LEQ: result = int64_t(second) <= int64_t(first); break;
+        case Binops::GT: result = int64_t(second) > int64_t(first); break;
+        case Binops::GEQ: result = int64_t(second) >= int64_t(first); break;
+        case Binops::EQ: result = (second == first); break;
+        case Binops::NEQ: result = (second != first); break;
+        case Binops::AND: result = (second && first); break;
+        case Binops::OR: result = (second || first); break;
       }
       push_operand((result << 1) + 1);
       break;
     }
 
-    case 1:
-      switch (l)
+    case HightSymbols::FIRST_GROUP:
+      switch (static_cast<FirstGroup>(l))
       {
-      case 0: { // CONST
+      case FirstGroup::CONST: { // CONST
         uint64_t n = INT;
         push_operand(make_boxed(n));
         break;
       }
 
-      case 1: { // STRING
+      case FirstGroup::STR: { // STRING
         uint64_t ptr = reinterpret_cast<uint64_t>(STRING);
         uint64_t allocated_ptr = reinterpret_cast<uint64_t>(Bstring(reinterpret_cast<aint *>(&ptr)));
         push_operand(allocated_ptr);
         break;
       }
 
-      case 2: { // SEXP
+      case FirstGroup::SEXP: { // SEXP
         uint64_t ptr = reinterpret_cast<uint64_t>(STRING);
         uint64_t n = INT;
         std::vector<aint> tmp_array;
@@ -649,40 +731,42 @@ static void run_interpreter()
         break;
       }
 
-      case 4: { // STA
+      case FirstGroup::STA: { // STA
         uint64_t v = pop_operand();
         uint64_t i = pop_operand();
         uint64_t y = pop_operand();
         push_operand(reinterpret_cast<uint64_t>(Bsta(reinterpret_cast<void *>(y), static_cast<aint>(i), reinterpret_cast<void *>(v))));
         break;
       }
+      
+      case FirstGroup::STI: // TODO
 
-      case 5: { // JMP
+      case FirstGroup::JMP: { // JMP
         uint64_t addr = INT;
         ip = addr + file->code_ptr;
         break;
       }
 
-      case 6: // END
+      case FirstGroup::END: // END
         ip = call_end();
         break;
 
-      case 7: // RET
+      case FirstGroup::RET: // RET
         ip = call_end();
         break;
 
-      case 8: // DROP
+      case FirstGroup::DROP: // DROP
         pop_operand();
         break;
 
-      case 9: { // DUP
+      case FirstGroup::DUP: { // DUP
         uint64_t value = pop_operand();
         push_operand(value);
         push_operand(value);
         break;
       }
 
-      case 10: { // SWAP
+      case FirstGroup::SWAP: { // SWAP
         uint64_t first = pop_operand();
         uint64_t second = pop_operand();
         push_operand(first);
@@ -690,7 +774,7 @@ static void run_interpreter()
         break;
       }
 
-      case 11: { // ELEM
+      case FirstGroup::ELEM: { // ELEM
         uint64_t i = pop_operand();
         uint64_t p = pop_operand();
         push_operand(reinterpret_cast<uint64_t>(Belem(reinterpret_cast<void *>(p), static_cast<aint>(i))));
@@ -699,46 +783,47 @@ static void run_interpreter()
       }
       break;
 
-    case 2: {// LD
+    case HightSymbols::LD: {// LD
       uint64_t variable;
       uint64_t i = INT;
-      switch (l)
+      switch (static_cast<Locs>(l))
       {
-      case 0:
+      case Locs::GLOB:
         variable = *get_global(i);
         break;
-      case 1:
+      case Locs::LOC:
         variable = *get_local(i);
         break;
-      case 2:
+      case Locs::ARG:
         variable = *get_arg(i);
         break;
-      case 3:
+      case Locs::CLOS:
         variable = *get_closure(i);
         break;
       }
       push_operand(variable);
       break;
     }
-    case 4: {// ST
+    case HightSymbols::LDA: // TODO
+    case HightSymbols::ST: {// ST
       uint64_t i = INT;
       uint64_t value = pop_operand();
       push_operand(value);
-      switch (l)
+      switch (static_cast<Locs>(l))
       {
-      case 0: {
+      case Locs::GLOB: {
         *get_global(i) = value;
         break;
       }
-      case 1: {
+      case Locs::LOC: {
         *get_local(i) = value;
         break;
       }
-      case 2: {
+      case Locs::ARG: {
         *get_arg(i) = value;
         break;
       }
-      case 3: {
+      case Locs::CLOS: {
         *get_closure(i) = value;
         break;
       }
@@ -746,10 +831,10 @@ static void run_interpreter()
       break;
     }
 
-    case 5:
-      switch (l)
+    case HightSymbols::SECOND_GROUP:
+      switch (static_cast<SecondGroup>(l))
       {
-      case 0: { // CJMPz
+      case SecondGroup::CJMPZ: { // CJMPz
         uint64_t addr = INT;
         uint64_t value = make_unboxed(pop_operand());
         if (value == 0) {
@@ -758,7 +843,7 @@ static void run_interpreter()
         break;
       }
 
-      case 1: { // CJMPnz
+      case SecondGroup::CJMPNZ: { // CJMPnz
         uint64_t addr = INT;
         uint64_t value = make_unboxed(pop_operand());
         if (value != 0) {
@@ -767,7 +852,7 @@ static void run_interpreter()
         break;
       }
 // TODO: remove ////
-      case 2: { // BEGIN
+      case SecondGroup::BEGIN: { // BEGIN
         uint64_t nargs = INT;
         uint64_t nlocals = INT;
         [[unlikely]] if (!expected_begin) {
@@ -781,7 +866,7 @@ static void run_interpreter()
         break;
       }
 
-      case 3: { // CBEGIN
+      case SecondGroup::CBEGIN: { // CBEGIN
         uint64_t nargs = INT;
         uint64_t nlocals = INT;
         [[unlikely]] if (!expected_begin) {
@@ -795,7 +880,7 @@ static void run_interpreter()
         break;
       }
 
-      case 4: { // CLOSURE
+      case SecondGroup::CLOSURE: { // CLOSURE
         uint64_t addr = INT;
           uint32_t n = INT;
           std::vector<aint> args;
@@ -808,24 +893,24 @@ static void run_interpreter()
           args[0] = addr;
           for (int i = 0; i < n; i++)
           {
-            switch (BYTE)
+            switch (static_cast<Locs>(BYTE))
             {
-            case 0: {
+            case Locs::GLOB: {
               uint64_t j = INT;
               args[i + 1] = *get_global(j);
               break;
             }
-            case 1: {
+            case Locs::LOC: {
               uint64_t j = INT;
               args[i + 1] = *get_local(j);
               break;
             }
-            case 2: {
+            case Locs::ARG: {
               uint64_t j = INT;
               args[i + 1] = *get_arg(j);
               break;
             }
-            case 3: {
+            case Locs::CLOS: {
               uint64_t j = INT;
               args[i + 1] = *get_closure(j);
               break;
@@ -837,7 +922,7 @@ static void run_interpreter()
         break;
       }
 // TODO: remove unused imports + format
-      case 5: { // CALLC
+      case SecondGroup::CALLC: { // CALLC
         uint64_t args_number = INT;
         expected_begin = true;
         call_begin(args_number, ip);
@@ -849,7 +934,7 @@ static void run_interpreter()
         break;
       }
 
-      case 6: { // CALL
+      case SecondGroup::CALL: { // CALL
         uint64_t addr = INT;
         uint64_t args_number = INT;
         expected_begin = true;
@@ -858,7 +943,7 @@ static void run_interpreter()
         break;
       }
 
-      case 7: { // TAG
+      case SecondGroup::TAG: { // TAG
         uint64_t string_ptr = reinterpret_cast<uint64_t>(STRING);
         uint64_t size = INT;
         uint64_t data = pop_operand();
@@ -868,7 +953,7 @@ static void run_interpreter()
         break;
       }
 
-      case 8: { // ARRAY
+      case SecondGroup::ARRAY: { // ARRAY
         uint64_t size = INT;
         uint64_t data = pop_operand();
         uint64_t value = Barray_patt(reinterpret_cast<void *>(data), make_boxed(size));
@@ -876,7 +961,7 @@ static void run_interpreter()
         break;
       }
 
-      case 9: { // FAIL
+      case SecondGroup::FAIL_COMMAND: { // FAIL
         uint64_t line = INT;
         uint64_t column = INT;
         uint64_t data = pop_operand();
@@ -885,53 +970,53 @@ static void run_interpreter()
         break;
       }
 
-      case 10: { // LINE
+      case SecondGroup::LINE: { // LINE
         uint64_t n = INT;
         break;
       }
       }
       break;
 
-    case 6: { // PATT
-      switch (l) {
-        case 0: { // strcmp
+    case HightSymbols::PATT: { // PATT
+      switch (static_cast<Patterns>(l)) {
+        case Patterns::STRCMP: { // strcmp
           void *first = reinterpret_cast<void *>(pop_operand());
           void *second = reinterpret_cast<void *>(pop_operand());
           push_operand(Bstring_patt(first, second));
           break;
         }
-        case 1: // string
+        case Patterns::STR: // string
           push_operand(Bstring_tag_patt(reinterpret_cast<void *>(pop_operand())));
           break;
-        case 2: // array
+        case Patterns::ARRAY: // array
           push_operand(Barray_tag_patt(reinterpret_cast<void *>(pop_operand())));
           break;
-        case 3: // sexp
+        case Patterns::SEXP: // sexp
           push_operand(Bsexp_tag_patt(reinterpret_cast<void *>(pop_operand())));
           break;
-        case 4: // ref = boxed
+        case Patterns::BOXED: // ref = boxed
           push_operand(Bboxed_patt(reinterpret_cast<void *>(pop_operand())));
           break;
-        case 5: // val = unboxed
+        case Patterns::UNBOXED: // val = unboxed
           push_operand(Bunboxed_patt(reinterpret_cast<void *>(pop_operand())));
           break;
-        case 6: // fun
+        case Patterns::CLOSURE: // fun
           push_operand(Bclosure_tag_patt(reinterpret_cast<void *>(pop_operand())));
           break;
       }
       break;
     }
 
-    case 7:
+    case HightSymbols::CALL_SPECIAL:
     {
-      switch (l) // Lread
+      switch (static_cast<SpecialCalls>(l)) // Lread
       {
-      case 0:
+      case SpecialCalls::LREAD:
         fprintf(stdout, " ");
         push_operand(Lread());
         break;
 
-      case 1: {// Lwrite
+      case SpecialCalls::LWRITE: {// Lwrite
         uint64_t value = pop_operand();
         check_unboxed(value, "Lwrite accept only numbers");
         Lwrite(value);
@@ -939,17 +1024,17 @@ static void run_interpreter()
         break;
       }
 
-      case 2: // Llength
+      case SpecialCalls::LLENGTH: // Llength
         push_operand(Llength(reinterpret_cast<void *>(pop_operand())));
         break;
 
-      case 3: { // Lstring
+      case SpecialCalls::LSTRING: { // Lstring
         uint64_t value = pop_operand();
         push_operand(reinterpret_cast<uint64_t>(Lstring(reinterpret_cast<aint *>(&value))));
         break;
       }
 
-      case 4: { // Barray
+      case SpecialCalls::BARRAY: { // Barray
         uint64_t n = INT;
         aint args[n];
         for (int i = n - 1; i >= 0; --i) {
