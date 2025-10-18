@@ -84,6 +84,10 @@ static inline uint32_t get_public_offset(const bytefile *f, uint32_t i)
   return f->public_ptr[i * 2 + 1];
 }
 
+static inline void errno_failure() {
+  failure("%s\n", strerror(errno));
+}
+
 /* Reads a binary bytecode file by name and unpacks it */
 static const bytefile *read_file(const char *fname)
 {
@@ -93,12 +97,12 @@ static const bytefile *read_file(const char *fname)
 
   if (f == 0)
   {
-    failure("%s\n", strerror(errno));
+    errno_failure();
   }
 
   if (fseek(f, 0, SEEK_END) == -1)
   {
-    failure("%s\n", strerror(errno));
+    errno_failure();
   }
 
   bytefile_size = sizeof(void *) * 4 + (size = ftell(f));
@@ -113,7 +117,7 @@ static const bytefile *read_file(const char *fname)
 
   if (size != fread(&file->stringtab_size, 1, size, f))
   {
-    failure("%s\n", strerror(errno));
+    errno_failure();
   }
 
   fclose(f);
@@ -443,6 +447,7 @@ static inline uint64_t *get_local(uint64_t i) {
   return (sp - i - 1);
 }
 
+#ifndef NDEBUG // for debug only
 static void print_stacks() {
   fprintf(stderr, "\n\nstack:");
   for (uint64_t *i = operand_stack_end - 1; i >= OPERAND_STACK_SIZE_BEGIN; --i) {
@@ -460,6 +465,7 @@ static void print_stacks() {
   }
   fprintf(stderr, "\n\n");
 }
+#endif
 
 static inline uint64_t *get_arg(uint64_t i) {
   return (fp - i - 1);
@@ -853,11 +859,6 @@ static void check_file(FILE *f = stderr)
 stop:
   return;
 }
-
-#undef INT
-#undef BYTE
-#define INT (ip += sizeof(uint32_t), *(uint32_t *)(ip - sizeof(uint32_t)))
-#define BYTE *ip++
 
 static void run_interpreter()
 {
