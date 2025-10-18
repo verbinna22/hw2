@@ -4,10 +4,13 @@
 #include <cstddef>
 #include <cstdint>
 #include <cstring>
+#include <memory>
+#include <new>
 #include <stdexcept>
 #include <stdint.h>
 #include <unordered_map>
 #include <unordered_set>
+#include <vector>
 
 extern "C" {
 #define _Noreturn [[noreturn]]
@@ -143,12 +146,12 @@ static const bytefile *read_file(const char *fname)
   return file;
 }
 
-#ifndef NDEBUG // for debug only
-
-#define INT (ip += sizeof(uint32_t), *(uint32_t *)(ip - sizeof(uint32_t)))
-#define BYTE *ip++
 #define STRING get_string(file, INT)
 #define FAIL failure("ERROR: invalid opcode %d-%d\n", h, l)
+
+#ifndef NDEBUG // for debug only
+#define INT (ip += sizeof(uint32_t), *(uint32_t *)(ip - sizeof(uint32_t)))
+#define BYTE *ip++
 
 static void print_code(const char *ip, FILE *f = stderr)
 {
@@ -373,6 +376,8 @@ static void print_code(const char *ip, FILE *f = stderr)
 
     fprintf(f, "\n");
 }
+#undef INT
+#undef BYTE
 #endif
 
 constexpr uint64_t OPERAND_STACK_SIZE_U = 1024 * 1024;
@@ -401,12 +406,18 @@ constexpr uint64_t NUTIL_VALUES = 4;
 
 
 static inline void move_globals(uint64_t number_of_globals) {
+  [[unlikely]] if (CALL_STACK_BEGIN + number_of_globals > CALL_STACK_END) {
+    throw std::logic_error("too much globals");
+  }
   nglobals = number_of_globals;
   CALL_STACK_BEGIN += nglobals;
   sp += nglobals * sizeof(uint64_t);
 }
 
 static inline uint64_t *get_global(uint64_t i) {
+  [[unlikely]] if (i >= nglobals) {
+    throw std::logic_error("invalid index of global");
+  }
   return (GLOBALS_BEGIN + i); // file->global_ptr + i;
 }
 
@@ -429,6 +440,7 @@ static inline void push_operand(uint64_t operand) {
 }
 
 static inline void main_begin() {
+  // must be successful: nargs in main = 2
   sp += (nargs_in_current_function + NUTIL_VALUES) * sizeof(uint64_t);
 }
 
@@ -454,10 +466,12 @@ static inline void alloc_locals(uint64_t nlocals) {
     throw std::logic_error("call stack overflow");
   }
   nlocals_in_current_function = nlocals;
-  ///fprintf(stderr, "nl: %lu na: %lu ng: %lu\n", nlocals_in_current_function, nargs_in_current_function, nglobals);///
 }
 
 static inline uint64_t *get_local(uint64_t i) {
+  [[unlikely]] if (i >= nlocals_in_current_function) {
+    throw std::logic_error("invalid index of local");
+  }
   return reinterpret_cast<uint64_t *>(sp - (i + 1) * sizeof(uint64_t));
 }
 
@@ -482,6 +496,9 @@ static void print_stacks() {
 #endif
 
 static inline uint64_t *get_arg(uint64_t i) {
+  [[unlikely]] if (i >= nargs_in_current_function) {
+    throw std::logic_error("invalid index of arg");
+  }
   return (reinterpret_cast<uint64_t *>(sp) - nlocals_in_current_function - NUTIL_VALUES - i - 1);
 }
 
@@ -534,344 +551,15 @@ static inline void check_unboxed(uint64_t n, const std::string &message) {
 #define CHECK_NUMBER_IS_ADEQUATE(n) do { [[unlikely]] if (n > 256) throw std::logic_error("inadequate constant"); } while (0)
 
 static inline const char *safe_get_ip(const char* ip, size_t size) {
-  [[unlikely]] if (ip + size - 1 > (char *)file + bytefile_size) {
-    throw std::logic_error("file is not finishing");
+  [[unlikely]] if (ip + size - 1 >= (char *)file + bytefile_size || ip < (char *)file) {
+    throw std::logic_error("bad ip");
   }
   return ip;
 }
 
-#undef INT
-#undef BYTE
+
 #define INT (ip += sizeof(uint32_t), *(const uint32_t *)safe_get_ip(ip - sizeof(uint32_t), sizeof(uint32_t)))
 #define BYTE (ip += 1, *safe_get_ip(ip - 1, 1))
-
-static void check_file(FILE *f = stderr)
-{
-  const char *ip = file->code_ptr;
-  
-  bool was_begin = false;
-  uint64_t globals = file->global_area_size;
-  uint64_t locals = 0;
-  uint64_t args = 0;
-  std::unordered_map<uint64_t, uint64_t> addr_to_args_number;
-  std::unordered_set<uint64_t> addrs_jump_in_function;
-  std::unordered_set<uint64_t> function_begin_addrs;
-  std::unordered_set<uint64_t> forward_calls;
-  std::unordered_set<uint64_t> closure_begin_addrs;
-  std::unordered_set<uint64_t> forward_ccalls;
-  uint64_t addr_of_function_begin = 0;
-
-  do
-  {
-    // print_code(ip);
-    char x = BYTE,
-         h = (x & 0xF0) >> 4,
-         l = x & 0x0F;
-
-    uint64_t current_addr = ip - file->code_ptr - 1;
-    [[unlikely]] if (!was_begin && (h != 5 || l != 2 && l != 3) && h != 15) {
-      throw std::logic_error("should be BEGIN instruction");
-    }
-    bool is_main_begin = current_addr == main_addr;
-    [[unlikely]] if (is_main_begin && (h != 5 || l != 2)) {
-      throw std::logic_error("main should point to BEGIN");
-    }
-    if (forward_calls.find(current_addr) != forward_calls.end()) {
-      [[unlikely]] if (h != 5 || l != 2) {
-        throw std::logic_error("CALL must refer to BEGIN");
-      } else {
-        forward_calls.erase(forward_calls.find(current_addr));
-      }
-    }
-    if (forward_ccalls.find(current_addr) != forward_ccalls.end()) {
-      [[unlikely]] if (h != 5 || l != 3 && l != 2) {
-        throw std::logic_error("CLOSURE must refer to BEGIN");
-      } else {
-        forward_ccalls.erase(forward_ccalls.find(current_addr));
-      }
-    }
-
-    switch (h)
-    {
-    case 15:
-      [[unlikely]] if (was_begin) {
-        throw std::logic_error("invalid file: <end> before END");
-      }
-      [[unlikely]] if (main_addr + file->code_ptr >= ip) {
-        throw std::logic_error("main points outside the code");
-      }
-      [[unlikely]] if (!forward_calls.empty()) {
-        throw std::logic_error("unresolved calls was found");
-      }
-      [[unlikely]] if (!forward_ccalls.empty()) {
-        throw std::logic_error("unresolved closures was found");
-        // for (auto ccal : forward_ccalls) {
-        //   fprintf(stderr, "%lx\n", ccal); //
-        // }
-      }
-      goto stop;
-
-    /* BINOP */
-    case 0: {
-      [[unlikely]] if (l < 1 || l > 13) {
-        throw std::logic_error("unknown BINOP");
-      }
-      break;
-    }
-
-    case 1:
-      switch (l)
-      {
-      case 0: { // CONST
-        uint64_t n = INT;
-        break;
-      }
-
-      case 1: { // STRING
-        const char *tag = STRING;
-        break;
-      }
-
-      case 2: { // SEXP
-        const char *tag = STRING;
-        uint64_t n = INT;
-        CHECK_NUMBER_IS_ADEQUATE(n);
-        break;
-      }
-
-      [[unlikely]] case 3:
-        throw std::logic_error("STI is temporary prohibited");
-
-      case 4: // STA
-        break;
-
-      case 5: { // JMP
-        uint64_t addr = INT;
-        CHECK_JMP_ADDR(addr);
-        break;
-      }
-
-      case 6: // END
-        was_begin = false;
-        for (auto addr : addrs_jump_in_function) {
-          [[unlikely]] if (addr > current_addr) {
-            throw std::logic_error("invalid jump");
-          }
-        }
-        addrs_jump_in_function.clear();
-        break;
-
-      case 7: // RET
-        break;
-
-      case 8: // DROP
-        break;
-
-      case 9: // DUP
-        break;
-
-      case 10: // SWAP
-        break;
-
-      case 11: // ELEM
-        break;
-
-      default:
-        FAIL;
-      }
-      break;
-    case 3: // LDA
-      throw std::logic_error("LDA is temporary prohibited");
-    case 2: // LD
-    case 4: { // ST
-      uint64_t i = INT;
-      switch (l)
-      {
-      case 0:
-        CHECK_GLOBAL(i);
-        break;
-      case 1:
-        CHECK_LOCALS(i);
-        break;
-      case 2:
-        CHECK_ARGS(i);
-        break;
-      case 3:
-        break;
-      default:
-        FAIL;
-      }
-      break;
-    }
-
-    case 5:
-      switch (l)
-      { // CJMPz
-      case 0: {
-        uint64_t addr = INT;
-        CHECK_JMP_ADDR(addr);
-        break;
-      }
-
-      case 1: { // CJMPnz
-        uint64_t addr = INT;
-        CHECK_JMP_ADDR(addr);
-        break;
-      }
-
-      case 2: { // BEGIN
-        uint64_t nargs = INT;
-        uint64_t nlocals = INT;
-        was_begin = true;
-        CHECK_ARGS_NUMBER(current_addr, nargs);
-        [[unlikely]] if (is_main_begin && nargs != 2) {
-          throw std::logic_error("should be 2 args in main");
-        }
-        addr_of_function_begin = current_addr;
-        function_begin_addrs.insert(addr_of_function_begin);
-        args = nargs;
-        locals = nlocals;
-        break;
-      }
-
-      case 3: { // CBEGIN
-        uint64_t nargs = INT;
-        uint64_t nlocals = INT;
-        was_begin = true;
-        CHECK_ARGS_NUMBER((ip - file->code_ptr - 1), nargs);
-        addr_of_function_begin = current_addr;
-        closure_begin_addrs.insert(addr_of_function_begin);
-        args = nargs;
-        locals = nlocals;
-        break;
-      }
-
-      case 4: { // CLOSURE
-        uint64_t addr = INT;
-        {
-          uint32_t n = INT;
-          CHECK_NUMBER_IS_ADEQUATE(n);
-          for (int i = 0; i < n; i++)
-          {
-            uint64_t byte = BYTE;
-            uint64_t number = INT;
-            switch (byte)
-            {
-            case 0:
-              CHECK_GLOBAL(number);
-              break;
-            case 1:
-              CHECK_LOCALS(number);
-              break;
-            case 2:
-              CHECK_ARGS(number);
-              break;
-            case 3:
-              break;
-            default:
-              FAIL;
-            }
-          }
-        };
-        if (addr <= current_addr) {
-          [[unlikely]] if (closure_begin_addrs.find(current_addr) == closure_begin_addrs.end()) {
-            throw std::logic_error("CLOSURE must correspond BEGIN");
-          }
-        } else {
-          forward_ccalls.insert(addr);
-        }
-        break;
-      }
-
-      case 5: { // CALLC
-        uint64_t n = INT;
-        break;
-      }
-
-      case 6: { // CALL
-        uint64_t addr = INT;
-        uint64_t arg_number = INT;
-        CHECK_ARGS_NUMBER(addr, arg_number);
-        if (addr <= current_addr) {
-          [[unlikely]] if (function_begin_addrs.find(addr) == function_begin_addrs.end()) {
-            throw std::logic_error("CALL must refer to BEGIN");
-          }
-        } else {
-          forward_calls.insert(addr);
-        }
-        break;
-      }
-
-      case 7: { // TAG
-        const char *tag = STRING;
-        uint64_t n = INT;
-        CHECK_NUMBER_IS_ADEQUATE(n);
-        break;
-      }
-
-      case 8: { // ARRAY
-        uint64_t n = INT;
-        CHECK_NUMBER_IS_ADEQUATE(n);
-        break;
-      }
-
-      case 9: { // FAIL
-        uint64_t line = INT;
-        uint64_t column = INT;
-        break;
-      }
-
-      case 10: { // LINE
-        uint64_t n = INT;
-        break;
-      }
-
-      default:
-        FAIL;
-      }
-      break;
-
-    case 6: // PATT
-      [[unlikely]] if (l >= 7) {
-        throw std::logic_error("unsupported pattern for PATT");
-      }
-      break;
-
-    case 7:
-    {
-      switch (l)
-      {
-      case 0: // Lread
-        break;
-
-      case 1: // Lwrite
-        break;
-
-      case 2: // Llength
-        break;
-
-      case 3: // Lstring
-        break;
-
-      case 4: { // Barray
-        uint64_t n = INT;
-        CHECK_NUMBER_IS_ADEQUATE(n);
-        break;
-      }
-
-      default:
-        FAIL;
-      }
-    }
-    break;
-
-    default:
-      FAIL;
-    }
-  } while (1);
-stop:
-  return;
-}
 
 static void run_interpreter()
 {
@@ -943,12 +631,17 @@ static void run_interpreter()
       case 2: { // SEXP
         uint64_t ptr = reinterpret_cast<uint64_t>(STRING);
         uint64_t n = INT;
-        aint tmp_array[n + 1];
+        std::vector<aint> tmp_array;
+        try {
+          tmp_array.resize(n + 1);
+        } catch (std::bad_alloc &) {
+          throw std::logic_error("too long SEXP to allocate");
+        }
         tmp_array[n] = LtagHash(reinterpret_cast<char *>(ptr));
         for (int i = n - 1; i >= 0; --i) {
           tmp_array[i] = pop_operand();
         }
-        uint64_t allocated_value = reinterpret_cast<uint64_t>(Bsexp(tmp_array, static_cast<aint>(make_boxed(n + 1))));
+        uint64_t allocated_value = reinterpret_cast<uint64_t>(Bsexp(tmp_array.data(), static_cast<aint>(make_boxed(n + 1))));
         push_operand(allocated_value);
         break;
       }
@@ -985,7 +678,7 @@ static void run_interpreter()
         push_operand(value);
         break;
       }
-
+// TODO: begin after call
       case 10: { // SWAP
         uint64_t first = pop_operand();
         uint64_t second = pop_operand();
@@ -1070,7 +763,7 @@ static void run_interpreter()
         }
         break;
       }
-
+// TODO: remove ////
       case 2: { // BEGIN
         uint64_t nargs = INT;
         uint64_t nlocals = INT;
@@ -1094,7 +787,12 @@ static void run_interpreter()
       case 4: { // CLOSURE
         uint64_t addr = INT;
           uint32_t n = INT;
-          aint args[n + 1];
+          std::vector<aint> args;
+          try {
+            args.resize(n + 1);
+          } catch (std::bad_alloc &) {
+            throw std::logic_error("too long CLOSURE to allocate");
+          }
           {
           args[0] = addr;
           for (int i = 0; i < n; i++)
@@ -1124,10 +822,10 @@ static void run_interpreter()
             }
           }
         };
-        push_operand(reinterpret_cast<uint64_t>(Bclosure(args, make_boxed(n))));
+        push_operand(reinterpret_cast<uint64_t>(Bclosure(args.data(), make_boxed(n))));
         break;
       }
-
+// TODO: remove unused imports + format
       case 5: { // CALLC
         uint64_t args_number = INT;
         call_begin(args_number, ip);
@@ -1263,7 +961,7 @@ static void find_main()
     const char *name =  get_public_name(file, i);
     uint64_t offset = get_public_offset(file, i);
     if (std::strcmp(name, "main") == 0) {
-      main_addr = (offset);
+      main_addr = offset;
       found = true;
       break;
     }
@@ -1273,7 +971,7 @@ static void find_main()
   }
 }
 
-int main(int argc, char *argv[])
+int main(int argc, const char *argv[])
 {
   [[unlikely]] if (argc != 2) {
     fprintf(stderr, "Error: should be 1 argument *.bc file!\n");
@@ -1281,10 +979,8 @@ int main(int argc, char *argv[])
   }
   file_name = argv[1];
   try {
-    const bytefile *f = read_file(file_name);
-    file = f;
+    file = read_file(file_name);
     find_main();
-    check_file();
   } catch (std::logic_error &e) {
     fprintf(stderr, "Error in bytecode: %s!\n", e.what());
     std::exit(1);
