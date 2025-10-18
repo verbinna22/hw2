@@ -1,6 +1,5 @@
 /* Lama SM Bytecode interpreter */
 
-#include <bits/types/clockid_t.h>
 #include <cstddef>
 #include <cstdint>
 #include <cstring>
@@ -358,149 +357,149 @@ static void print_code (const char *ip, FILE *f = stderr) {
 #  undef BYTE
 #endif
 
-constexpr uint64_t OPERAND_STACK_SIZE_U = 1024 * 1024;
-constexpr uint64_t CALL_STACK_SIZE_U    = 1024 * 1024;
+constexpr size_t OPERAND_STACK_SIZE_U = 1024 * 1024;
+constexpr size_t CALL_STACK_SIZE_U    = 1024 * 1024;
 
 // __gc_stack_top ( operands || current_closure_register || globals
 // || args | RA | prev_nargs | prev_nlocals | prev_closure | locals ) __gc_stack_bottom
-static uint64_t memory_to_simulation[1 + OPERAND_STACK_SIZE_U + CALL_STACK_SIZE_U];
+static aint memory_to_simulation[1 + OPERAND_STACK_SIZE_U + CALL_STACK_SIZE_U];
 
-constexpr uint64_t *OPERAND_STACK_BEGIN_INCL = memory_to_simulation + OPERAND_STACK_SIZE_U - 1;
-constexpr uint64_t *OPERAND_STACK_END_INCL   = memory_to_simulation;
-constexpr uint64_t *CLOSURE_ADDRESS          = memory_to_simulation + OPERAND_STACK_SIZE_U;
-constexpr uint64_t *GLOBALS_BEGIN            = memory_to_simulation + OPERAND_STACK_SIZE_U + 1;
+constexpr aint *OPERAND_STACK_BEGIN_INCL = memory_to_simulation + OPERAND_STACK_SIZE_U - 1;
+constexpr aint *OPERAND_STACK_END_INCL   = memory_to_simulation;
+constexpr aint *CLOSURE_ADDRESS          = memory_to_simulation + OPERAND_STACK_SIZE_U;
+constexpr aint *GLOBALS_BEGIN            = memory_to_simulation + OPERAND_STACK_SIZE_U + 1;
 #define GLOBALS_END CALL_STACK_BEGIN
-static uint64_t *CALL_STACK_BEGIN = memory_to_simulation + OPERAND_STACK_SIZE_U + 1;
+static aint *CALL_STACK_BEGIN = memory_to_simulation + OPERAND_STACK_SIZE_U + 1;
 #define sp __gc_stack_bottom
 #define operand_stack_end __gc_stack_top
-constexpr uint64_t *CALL_STACK_END =
+constexpr aint *CALL_STACK_END =
     &memory_to_simulation[1 + OPERAND_STACK_SIZE_U + CALL_STACK_SIZE_U];
 
-static uint64_t main_addr;
+static size_t main_addr;
 
-static uint64_t    nargs_in_current_function   = 2;
-static uint64_t    nlocals_in_current_function = 0;
-static uint64_t    nglobals;
-constexpr uint64_t NUTIL_VALUES = 4;
+static size_t    nargs_in_current_function   = 2;
+static size_t    nlocals_in_current_function = 0;
+static size_t    nglobals;
+constexpr size_t NUTIL_VALUES = 4;
 
-static inline void move_globals (uint64_t number_of_globals) {
+static inline void move_globals (size_t number_of_globals) {
   if (CALL_STACK_BEGIN + number_of_globals > CALL_STACK_END) [[unlikely]] {
     throw std::logic_error("too much globals");
   }
   nglobals = number_of_globals;
   CALL_STACK_BEGIN += nglobals;
-  sp += nglobals * sizeof(uint64_t);
+  sp += nglobals * sizeof(aint);
 }
 
-static inline uint64_t *get_global (uint64_t i) {
+static inline aint *get_global (size_t i) {
   if (i >= nglobals) [[unlikely]] { throw std::logic_error("invalid index of global"); }
   return (GLOBALS_BEGIN + i);   // file->global_ptr + i;
 }
 
-static inline uint64_t pop_operand () {
-  if (reinterpret_cast<uint64_t *>(operand_stack_end) == OPERAND_STACK_BEGIN_INCL) [[unlikely]] {
+static inline aint pop_operand () {
+  if (reinterpret_cast<aint *>(operand_stack_end) == OPERAND_STACK_BEGIN_INCL) [[unlikely]] {
     throw std::logic_error("op stack underflow");
   }
-  operand_stack_end += sizeof(uint64_t);
-  uint64_t result = *reinterpret_cast<uint64_t *>(operand_stack_end);
+  operand_stack_end += sizeof(aint);
+  aint result = *reinterpret_cast<aint *>(operand_stack_end);
   return result;
 }
 
-static inline void push_operand (uint64_t operand) {
-  if (reinterpret_cast<uint64_t *>(operand_stack_end) < OPERAND_STACK_END_INCL) [[unlikely]] {
+static inline void push_operand (aint operand) {
+  if (reinterpret_cast<aint *>(operand_stack_end) < OPERAND_STACK_END_INCL) [[unlikely]] {
     throw std::logic_error("op stack overflow");
   }
   //fprintf(stderr, "---%lx %lx\n", operand_stack_end, OPERAND_STACK_BEGIN_INCL);//
-  *reinterpret_cast<uint64_t *>(operand_stack_end) = operand;
-  operand_stack_end -= sizeof(uint64_t);
+  *reinterpret_cast<aint *>(operand_stack_end) = operand;
+  operand_stack_end -= sizeof(aint);
 }
 
 static inline void main_begin () {
   // must be successful: nargs in main = 2
-  sp += (nargs_in_current_function + NUTIL_VALUES) * sizeof(uint64_t);
+  sp += (nargs_in_current_function + NUTIL_VALUES) * sizeof(aint);
 }
 
-static inline void call_begin (uint64_t nargs, const char *next) {
-  if (reinterpret_cast<uint64_t *>(sp) + nargs + NUTIL_VALUES >= CALL_STACK_END) [[unlikely]] {
+static inline void call_begin (size_t nargs, const char *next) {
+  if (reinterpret_cast<aint *>(sp) + nargs + NUTIL_VALUES >= CALL_STACK_END) [[unlikely]] {
     throw std::logic_error("call stack overflow");
   }
-  for (int i = 0; i < nargs; ++i) { reinterpret_cast<uint64_t *>(sp)[i] = pop_operand(); }
-  reinterpret_cast<uint64_t *>(sp)[nargs]     = reinterpret_cast<uint64_t>(next);
-  reinterpret_cast<uint64_t *>(sp)[nargs + 1] = nargs_in_current_function;
-  reinterpret_cast<uint64_t *>(sp)[nargs + 2] = nlocals_in_current_function;
-  reinterpret_cast<uint64_t *>(sp)[nargs + 3] = *CLOSURE_ADDRESS;
+  for (int i = 0; i < nargs; ++i) { reinterpret_cast<aint *>(sp)[i] = pop_operand(); }
+  reinterpret_cast<aint *>(sp)[nargs]     = reinterpret_cast<aint>(next);
+  reinterpret_cast<aint *>(sp)[nargs + 1] = nargs_in_current_function;
+  reinterpret_cast<aint *>(sp)[nargs + 2] = nlocals_in_current_function;
+  reinterpret_cast<aint *>(sp)[nargs + 3] = *CLOSURE_ADDRESS;
   *CLOSURE_ADDRESS                            = 0;
-  sp += (nargs + NUTIL_VALUES) * sizeof(uint64_t);
+  sp += (nargs + NUTIL_VALUES) * sizeof(aint);
   nargs_in_current_function = nargs;
 }
 
-static inline void alloc_locals (uint64_t nlocals) {
-  sp += nlocals * sizeof(uint64_t);
-  if (reinterpret_cast<uint64_t *>(sp) >= CALL_STACK_END) [[unlikely]] {
+static inline void alloc_locals (size_t nlocals) {
+  sp += nlocals * sizeof(aint);
+  if (reinterpret_cast<aint *>(sp) >= CALL_STACK_END) [[unlikely]] {
     throw std::logic_error("call stack overflow");
   }
   nlocals_in_current_function = nlocals;
 }
 
-static inline uint64_t *get_local (uint64_t i) {
+static inline aint *get_local (size_t i) {
   if (i >= nlocals_in_current_function) [[unlikely]] {
     throw std::logic_error("invalid index of local");
   }
-  return reinterpret_cast<uint64_t *>(sp - (i + 1) * sizeof(uint64_t));
+  return reinterpret_cast<aint *>(sp - (i + 1) * sizeof(aint));
 }
 
 #ifndef NDEBUG   // for debug only
 static void print_stacks () {
   fprintf(stderr, "\n\nstack:");
-  for (uint64_t *i = reinterpret_cast<uint64_t *>(operand_stack_end) + 1;
+  for (aint *i = reinterpret_cast<aint *>(operand_stack_end) + 1;
        i <= OPERAND_STACK_BEGIN_INCL;
        ++i) {
     fprintf(stderr, " %li ", *i);
   }
   fprintf(stderr, "\n\nglobals:");
-  for (uint64_t *i = GLOBALS_BEGIN; i < GLOBALS_END; ++i) { fprintf(stderr, " %li ", *i); }
+  for (aint *i = GLOBALS_BEGIN; i < GLOBALS_END; ++i) { fprintf(stderr, " %li ", *i); }
   fprintf(stderr, "\n\nclosure:");
   fprintf(stderr, " %li ", *CLOSURE_ADDRESS);
   fprintf(stderr, "\n\ncall stack:");
-  for (uint64_t *i = reinterpret_cast<uint64_t *>(sp) - 1; i >= CALL_STACK_BEGIN; --i) {
+  for (aint *i = reinterpret_cast<aint *>(sp) - 1; i >= CALL_STACK_BEGIN; --i) {
     fprintf(stderr, " %li (%lx) ", *i, *i);
   }
   fprintf(stderr, "\n\n");
 }
 #endif
 
-static inline uint64_t *get_arg (uint64_t i) {
+static inline aint *get_arg (size_t i) {
   if (i >= nargs_in_current_function) [[unlikely]] {
     throw std::logic_error("invalid index of arg");
   }
-  return (reinterpret_cast<uint64_t *>(sp) - nlocals_in_current_function - NUTIL_VALUES - i - 1);
+  return (reinterpret_cast<aint *>(sp) - nlocals_in_current_function - NUTIL_VALUES - i - 1);
 }
 
-static inline uint64_t *get_closure (uint64_t i) {
+static inline aint *get_closure (size_t i) {
   if (*CLOSURE_ADDRESS == 0 || i >= LEN(TO_DATA((*CLOSURE_ADDRESS))) - 1) [[unlikely]] {
     throw std::logic_error("bad access to closure");
   }
-  return reinterpret_cast<uint64_t *>(*CLOSURE_ADDRESS)
+  return reinterpret_cast<aint *>(*CLOSURE_ADDRESS)
          + (i + 1);   //  Value.Access i -> I (word_size * (i + 1), r15)
 }
 
 static inline const char *call_end () {
   const char *result = reinterpret_cast<char *>(
-      *(reinterpret_cast<uint64_t *>(sp) - nlocals_in_current_function - 4));
-  uint64_t nargs   = *(reinterpret_cast<uint64_t *>(sp) - nlocals_in_current_function - 3);
-  uint64_t nlocals = *(reinterpret_cast<uint64_t *>(sp) - nlocals_in_current_function - 2);
-  *CLOSURE_ADDRESS = *(reinterpret_cast<uint64_t *>(sp) - nlocals_in_current_function - 1);
-  sp -= (nlocals_in_current_function + nargs_in_current_function + NUTIL_VALUES) * sizeof(uint64_t);
+      *(reinterpret_cast<aint *>(sp) - nlocals_in_current_function - 4));
+  size_t nargs   = *(reinterpret_cast<size_t *>(sp) - nlocals_in_current_function - 3);
+  size_t nlocals = *(reinterpret_cast<size_t *>(sp) - nlocals_in_current_function - 2);
+  *CLOSURE_ADDRESS = *(reinterpret_cast<aint *>(sp) - nlocals_in_current_function - 1);
+  sp -= (nlocals_in_current_function + nargs_in_current_function + NUTIL_VALUES) * sizeof(aint);
   nlocals_in_current_function = nlocals;
   nargs_in_current_function   = nargs;
   return result;
 }
 
-static inline uint64_t make_boxed (uint64_t n) { return (n << 1) + 1; }
+static inline aint make_boxed (aint n) { return (n << 1) + 1; }
 
-static inline uint64_t make_unboxed (int64_t n) { return n >> 1; }
+static inline aint make_unboxed (aint n) { return n >> 1; }
 
-static inline void check_unboxed (uint64_t n, const std::string &message) {
+static inline void check_unboxed (aint n, const std::string &message) {
   if (!(n & 1)) [[unlikely]] { throw std::logic_error(message); }
 }
 
@@ -538,9 +537,9 @@ static void run_interpreter () {
       /* BINOP  must be valid*/
       case HightSymbols::END: throw std::logic_error("end of bytecode was reached");
       case HightSymbols::BINOP: {
-        uint64_t result;
-        uint64_t first  = make_unboxed(pop_operand());
-        uint64_t second = make_unboxed(pop_operand());
+        aint result;
+        aint first  = make_unboxed(pop_operand());
+        aint second = make_unboxed(pop_operand());
         switch (static_cast<Binops>(l)) {
           case Binops::PLUS: result = second + first; break;
           case Binops::MINUS: result = second - first; break;
@@ -570,47 +569,47 @@ static void run_interpreter () {
       case HightSymbols::FIRST_GROUP:
         switch (static_cast<FirstGroup>(l)) {
           case FirstGroup::CONST: {   // CONST
-            uint64_t n = INT;
+            aint n = INT;
             push_operand(make_boxed(n));
             break;
           }
 
           case FirstGroup::STR: {   // STRING
-            uint64_t ptr = reinterpret_cast<uint64_t>(STRING);
-            uint64_t allocated_ptr =
-                reinterpret_cast<uint64_t>(Bstring(reinterpret_cast<aint *>(&ptr)));
+            aint ptr = reinterpret_cast<aint>(STRING);
+            aint allocated_ptr =
+                reinterpret_cast<aint>(Bstring(reinterpret_cast<aint *>(&ptr)));
             push_operand(allocated_ptr);
             break;
           }
 
           case FirstGroup::SEXP: {   // SEXP
-            uint64_t          ptr = reinterpret_cast<uint64_t>(STRING);
-            uint64_t          n   = INT;
+            aint          ptr = reinterpret_cast<aint>(STRING);
+            aint          n   = INT;
             std::vector<aint> tmp_array;
             try {
               tmp_array.resize(n + 1);
             } catch (std::bad_alloc &) { throw std::logic_error("too long SEXP to allocate"); }
             tmp_array[n] = LtagHash(reinterpret_cast<char *>(ptr));
             for (int i = n - 1; i >= 0; --i) { tmp_array[i] = pop_operand(); }
-            uint64_t allocated_value = reinterpret_cast<uint64_t>(
+            aint allocated_value = reinterpret_cast<aint>(
                 Bsexp(tmp_array.data(), static_cast<aint>(make_boxed(n + 1))));
             push_operand(allocated_value);
             break;
           }
 
           case FirstGroup::STA: {   // STA
-            uint64_t v = pop_operand();
-            uint64_t i = pop_operand();
-            uint64_t y = pop_operand();
-            push_operand(reinterpret_cast<uint64_t>(Bsta(
-                reinterpret_cast<void *>(y), static_cast<aint>(i), reinterpret_cast<void *>(v))));
+            aint v = pop_operand();
+            aint i = pop_operand();
+            aint y = pop_operand();
+            push_operand(reinterpret_cast<aint>(Bsta(
+                reinterpret_cast<void *>(y), i, reinterpret_cast<void *>(v))));
             break;
           }
 
           case FirstGroup::STI: throw std::logic_error("STI is temporary prohibited");
 
           case FirstGroup::JMP: {   // JMP
-            uint64_t addr = INT;
+            size_t addr = INT;
             ip            = addr + file->code_ptr;
             break;
           }
@@ -628,25 +627,25 @@ static void run_interpreter () {
             break;
 
           case FirstGroup::DUP: {   // DUP
-            uint64_t value = pop_operand();
+            aint value = pop_operand();
             push_operand(value);
             push_operand(value);
             break;
           }
 
           case FirstGroup::SWAP: {   // SWAP
-            uint64_t first  = pop_operand();
-            uint64_t second = pop_operand();
+            aint first  = pop_operand();
+            aint second = pop_operand();
             push_operand(first);
             push_operand(second);
             break;
           }
 
           case FirstGroup::ELEM: {   // ELEM
-            uint64_t i = pop_operand();
-            uint64_t p = pop_operand();
-            push_operand(reinterpret_cast<uint64_t>(
-                Belem(reinterpret_cast<void *>(p), static_cast<aint>(i))));
+            aint i = pop_operand();
+            aint p = pop_operand();
+            push_operand(reinterpret_cast<aint>(
+                Belem(reinterpret_cast<void *>(p), i)));
             break;
           }
 
@@ -655,8 +654,8 @@ static void run_interpreter () {
         break;
 
       case HightSymbols::LD: {   // LD
-        uint64_t variable;
-        uint64_t i = INT;
+        aint variable;
+        size_t i = INT;
         switch (static_cast<Locs>(l)) {
           case Locs::GLOB: variable = *get_global(i); break;
           case Locs::LOC: variable = *get_local(i); break;
@@ -669,8 +668,8 @@ static void run_interpreter () {
       }
       case HightSymbols::LDA: throw std::logic_error("LDA is temporary prohibited");
       case HightSymbols::ST: {   // ST
-        uint64_t i     = INT;
-        uint64_t value = pop_operand();
+        size_t i     = INT;
+        aint value = pop_operand();
         push_operand(value);
         switch (static_cast<Locs>(l)) {
           case Locs::GLOB: {
@@ -697,22 +696,22 @@ static void run_interpreter () {
       case HightSymbols::SECOND_GROUP:
         switch (static_cast<SecondGroup>(l)) {
           case SecondGroup::CJMPZ: {   // CJMPz
-            uint64_t addr  = INT;
-            uint64_t value = make_unboxed(pop_operand());
+            size_t addr  = INT;
+            aint value = make_unboxed(pop_operand());
             if (value == 0) { ip = addr + file->code_ptr; }
             break;
           }
 
           case SecondGroup::CJMPNZ: {   // CJMPnz
-            uint64_t addr  = INT;
-            uint64_t value = make_unboxed(pop_operand());
+            size_t addr  = INT;
+            aint value = make_unboxed(pop_operand());
             if (value != 0) { ip = addr + file->code_ptr; }
             break;
           }
 
           case SecondGroup::BEGIN: {   // BEGIN
-            uint64_t nargs   = INT;
-            uint64_t nlocals = INT;
+            size_t nargs   = INT;
+            size_t nlocals = INT;
             if (!expected_begin) [[unlikely]] { throw std::logic_error("BEGIN was not expected"); }
             expected_begin = false;
             if (nargs != nargs_in_current_function) [[unlikely]] {
@@ -723,8 +722,8 @@ static void run_interpreter () {
           }
 
           case SecondGroup::CBEGIN: {   // CBEGIN
-            uint64_t nargs   = INT;
-            uint64_t nlocals = INT;
+            size_t nargs   = INT;
+            size_t nlocals = INT;
             if (!expected_begin) [[unlikely]] { throw std::logic_error("CBEGIN was not expected"); }
             expected_begin = false;
             if (nargs != nargs_in_current_function) [[unlikely]] {
@@ -735,7 +734,7 @@ static void run_interpreter () {
           }
 
           case SecondGroup::CLOSURE: {   // CLOSURE
-            uint64_t          addr = INT;
+            size_t          addr = INT;
             uint32_t          n    = INT;
             std::vector<aint> args;
             try {
@@ -746,22 +745,22 @@ static void run_interpreter () {
               for (int i = 0; i < n; i++) {
                 switch (static_cast<Locs>(BYTE)) {
                   case Locs::GLOB: {
-                    uint64_t j  = INT;
+                    size_t j  = INT;
                     args[i + 1] = *get_global(j);
                     break;
                   }
                   case Locs::LOC: {
-                    uint64_t j  = INT;
+                    size_t j  = INT;
                     args[i + 1] = *get_local(j);
                     break;
                   }
                   case Locs::ARG: {
-                    uint64_t j  = INT;
+                    size_t j  = INT;
                     args[i + 1] = *get_arg(j);
                     break;
                   }
                   case Locs::CLOS: {
-                    uint64_t j  = INT;
+                    size_t j  = INT;
                     args[i + 1] = *get_closure(j);
                     break;
                   }
@@ -769,25 +768,25 @@ static void run_interpreter () {
                 }
               }
             };
-            push_operand(reinterpret_cast<uint64_t>(Bclosure(args.data(), make_boxed(n))));
+            push_operand(reinterpret_cast<aint>(Bclosure(args.data(), make_boxed(n))));
             break;
           }
 
           case SecondGroup::CALLC: {   // CALLC
-            uint64_t args_number = INT;
+            size_t args_number = INT;
             expected_begin       = true;
             call_begin(args_number, ip);
             *CLOSURE_ADDRESS = pop_operand();
             if (!Bclosure_tag_patt(reinterpret_cast<void *>(*CLOSURE_ADDRESS))) [[unlikely]] {
               throw std::logic_error("closure expected");
             }
-            ip = *reinterpret_cast<uint64_t *>(*CLOSURE_ADDRESS) + file->code_ptr;
+            ip = *reinterpret_cast<size_t *>(*CLOSURE_ADDRESS) + file->code_ptr;
             break;
           }
 
           case SecondGroup::CALL: {   // CALL
-            uint64_t addr        = INT;
-            uint64_t args_number = INT;
+            size_t addr        = INT;
+            size_t args_number = INT;
             expected_begin       = true;
             call_begin(args_number, ip);
             ip = addr + file->code_ptr;
@@ -795,10 +794,10 @@ static void run_interpreter () {
           }
 
           case SecondGroup::TAG: {   // TAG
-            uint64_t string_ptr = reinterpret_cast<uint64_t>(STRING);
-            uint64_t size       = INT;
-            uint64_t data       = pop_operand();
-            uint64_t value      = Btag(reinterpret_cast<char *>(data),
+            aint string_ptr = reinterpret_cast<aint>(STRING);
+            aint size       = INT;
+            aint data       = pop_operand();
+            aint value      = Btag(reinterpret_cast<char *>(data),
                                   LtagHash(reinterpret_cast<char *>(string_ptr)),
                                   make_boxed(size));
             push_operand(value);
@@ -806,17 +805,17 @@ static void run_interpreter () {
           }
 
           case SecondGroup::ARRAY: {   // ARRAY
-            uint64_t size  = INT;
-            uint64_t data  = pop_operand();
-            uint64_t value = Barray_patt(reinterpret_cast<void *>(data), make_boxed(size));
+            aint size  = INT;
+            aint data  = pop_operand();
+            aint value = Barray_patt(reinterpret_cast<void *>(data), make_boxed(size));
             push_operand(value);
             break;
           }
 
           case SecondGroup::FAIL_COMMAND: {   // FAIL
-            uint64_t line   = INT;
-            uint64_t column = INT;
-            uint64_t data   = pop_operand();
+            aint line   = INT;
+            aint column = INT;
+            aint data   = pop_operand();
             push_operand(data);
             Bmatch_failure(
                 reinterpret_cast<void *>(data), const_cast<char *>(file_name), line, column);
@@ -824,7 +823,7 @@ static void run_interpreter () {
           }
 
           case SecondGroup::LINE: {   // LINE
-            uint64_t n = INT;
+            size_t n = INT;
             break;
           }
 
@@ -872,7 +871,7 @@ static void run_interpreter () {
             break;
 
           case SpecialCalls::LWRITE: {   // Lwrite
-            uint64_t value = pop_operand();
+            aint value = pop_operand();
             check_unboxed(value, "Lwrite accept only numbers");
             Lwrite(value);
             push_operand(0);
@@ -884,16 +883,16 @@ static void run_interpreter () {
             break;
 
           case SpecialCalls::LSTRING: {   // Lstring
-            uint64_t value = pop_operand();
-            push_operand(reinterpret_cast<uint64_t>(Lstring(reinterpret_cast<aint *>(&value))));
+            aint value = pop_operand();
+            push_operand(reinterpret_cast<aint>(Lstring(reinterpret_cast<aint *>(&value))));
             break;
           }
 
           case SpecialCalls::BARRAY: {   // Barray
-            uint64_t n = INT;
+            aint n = INT;
             aint     args[n];
             for (int i = n - 1; i >= 0; --i) { args[i] = pop_operand(); }
-            push_operand(reinterpret_cast<uint64_t>(Barray(args, make_boxed(n))));
+            push_operand(reinterpret_cast<aint>(Barray(args, make_boxed(n))));
             break;
           }
           default: FAIL;
@@ -910,7 +909,7 @@ static void find_main () {
   bool found = false;
   for (int i = 0; i < file->public_symbols_number; i++) {
     const char *name   = get_public_name(file, i);
-    uint64_t    offset = get_public_offset(file, i);
+    size_t    offset = get_public_offset(file, i);
     if (std::strcmp(name, "main") == 0) {
       main_addr = offset;
       found     = true;
