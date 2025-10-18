@@ -19,9 +19,6 @@ extern "C" {
 #include <stdlib.h>
 #include "runtime/runtime.h"
 
-void *__start_custom_data;
-void *__stop_custom_data;
-
 extern void *Bstring (aint* args/*void *p*/);
 extern void *Bsexp (aint* args, aint bn);
 extern void *Bsta (void *x, aint i, void *v);
@@ -51,44 +48,44 @@ extern size_t __gc_stack_top, __gc_stack_bottom;
 /* The unpacked representation of bytecode file */
 typedef struct
 {
-  char *string_ptr;          /* A pointer to the beginning of the string table */
-  int *public_ptr;           /* A pointer to the beginning of publics table    */
-  char *code_ptr;            /* A pointer to the bytecode itself               */
-  int *global_ptr;           /* A pointer to the global area                   */
+  const char *string_ptr;          /* A pointer to the beginning of the string table */
+  const int *public_ptr;           /* A pointer to the beginning of publics table    */
+  const char *code_ptr;            /* A pointer to the bytecode itself               */
+  const int *global_ptr;           /* A pointer to the global area                   */
   int stringtab_size;        /* The size (in bytes) of the string table        */
   int global_area_size;      /* The size (in words) of global area             */
   int public_symbols_number; /* The number of public symbols                   */
-  char buffer[0];
+  const char buffer[0];
 } bytefile;
 
-size_t bytefile_size;
-bytefile *file;
-char *file_name;
+static size_t bytefile_size;
+static const bytefile *file;
+static const char *file_name;
 
 /* Gets a string from a string table by an index */
-char *get_string(bytefile *f, int pos)
+static inline const char *get_string(const bytefile *f, int pos)
 {
-  if (pos >= f->stringtab_size) {
+  [[unlikely]] if (pos >= f->stringtab_size) {
     throw std::logic_error("incorrect string offset");
   }
-  char *string = &f->string_ptr[pos];
+  const char *string = &f->string_ptr[pos];
   return string;
 }
 
 /* Gets a name for a public symbol */
-char *get_public_name(bytefile *f, int i)
+static inline const char *get_public_name(const bytefile *f, int i)
 {
   return get_string(f, f->public_ptr[i * 2]);
 }
 
 /* Gets an offset for a publie symbol */
-int get_public_offset(bytefile *f, int i)
+static inline int get_public_offset(const bytefile *f, int i)
 {
   return f->public_ptr[i * 2 + 1];
 }
 
 /* Reads a binary bytecode file by name and unpacks it */
-bytefile *read_file(char *fname)
+static const bytefile *read_file(const char *fname)
 {
   FILE *f = fopen(fname, "rb");
   long size;
@@ -147,11 +144,11 @@ bytefile *read_file(char *fname)
 #define STRING get_string(file, INT)
 #define FAIL failure("ERROR: invalid opcode %d-%d\n", h, l)
 
-void print_code(char *ip, FILE *f = stderr)
+static void print_code(char *ip, FILE *f = stderr)
 {
-  char *ops[] = {"+", "-", "*", "/", "%", "<", "<=", ">", ">=", "==", "!=", "&&", "!!"};
-  char *pats[] = {"=str", "#string", "#array", "#sexp", "#ref", "#val", "#fun"};
-  char *lds[] = {"LD", "LDA", "ST"};
+  const char *ops[] = {"+", "-", "*", "/", "%", "<", "<=", ">", ">=", "==", "!=", "&&", "!!"};
+  const char *pats[] = {"=str", "#string", "#array", "#sexp", "#ref", "#val", "#fun"};
+  const char *lds[] = {"LD", "LDA", "ST"};
   
     char x = BYTE,
          h = (x & 0xF0) >> 4,
@@ -375,31 +372,31 @@ constexpr uint64_t OPERAND_STACK_SIZE_U = 1024 * 1024;
 constexpr uint64_t CALL_STACK_SIZE_U = 1024 * 1024;
 constexpr uint64_t ALIGNMENT_FEATURE = 16;
 
-uint64_t memory_to_simulation[1 + ALIGNMENT_FEATURE + OPERAND_STACK_SIZE_U + CALL_STACK_SIZE_U];
+static uint64_t memory_to_simulation[1 + ALIGNMENT_FEATURE + OPERAND_STACK_SIZE_U + CALL_STACK_SIZE_U];
 
-uint64_t *OPERAND_STACK_SIZE_BEGIN = memory_to_simulation + 1 + ALIGNMENT_FEATURE;
-uint64_t *OPERAND_STACK_SIZE_END = memory_to_simulation + 1 + ALIGNMENT_FEATURE + OPERAND_STACK_SIZE_U;
+static uint64_t *OPERAND_STACK_SIZE_BEGIN = memory_to_simulation + 1 + ALIGNMENT_FEATURE;
+static uint64_t *OPERAND_STACK_SIZE_END = memory_to_simulation + 1 + ALIGNMENT_FEATURE + OPERAND_STACK_SIZE_U;
 constexpr uint64_t *CALL_STACK_SIZE_BEGIN = memory_to_simulation + 1 + ALIGNMENT_FEATURE + OPERAND_STACK_SIZE_U;
 constexpr uint64_t *CALL_STACK_SIZE_END = memory_to_simulation + 1 + ALIGNMENT_FEATURE + OPERAND_STACK_SIZE_U + CALL_STACK_SIZE_U;
-uint64_t *operand_stack_end = OPERAND_STACK_SIZE_BEGIN;
-uint64_t *fp = CALL_STACK_SIZE_BEGIN + 2;
-uint64_t *sp = CALL_STACK_SIZE_BEGIN + 2 + 4;
-uint64_t main_ptr;
-uint64_t *closure_address = memory_to_simulation + ALIGNMENT_FEATURE;
+static uint64_t *operand_stack_end = OPERAND_STACK_SIZE_BEGIN;
+static uint64_t *fp = CALL_STACK_SIZE_BEGIN + 2;
+static uint64_t *sp = CALL_STACK_SIZE_BEGIN + 2 + 4;
+static uint64_t main_ptr;
+static uint64_t *closure_address = memory_to_simulation + ALIGNMENT_FEATURE;
 
-void move_globals(uint64_t nglobals) {
+static inline void move_globals(uint64_t nglobals) {
   OPERAND_STACK_SIZE_BEGIN += nglobals;
   fp += nglobals;
   sp += nglobals;
   operand_stack_end += nglobals;
 }
 
-uint64_t *get_global(uint64_t i) {
+static inline uint64_t *get_global(uint64_t i) {
   return (OPERAND_STACK_SIZE_BEGIN - i - 1); // file->global_ptr + i;
 }
 
-uint64_t pop_operand() {
-  if (operand_stack_end == OPERAND_STACK_SIZE_BEGIN) {
+static inline uint64_t pop_operand() {
+  [[unlikely]] if (operand_stack_end == OPERAND_STACK_SIZE_BEGIN) {
     throw std::logic_error("op stack underflow");
   }
   --operand_stack_end;
@@ -408,16 +405,16 @@ uint64_t pop_operand() {
   return result;
 }
 
-void push_operand(uint64_t operand) {
+static inline void push_operand(uint64_t operand) {
   *operand_stack_end = operand;
   ++operand_stack_end; 
-  if (operand_stack_end >= OPERAND_STACK_SIZE_END) {
+  [[unlikely]] if (operand_stack_end >= OPERAND_STACK_SIZE_END) {
     throw std::logic_error("op stack overflow");
   }
 }
 
-void call_begin(uint64_t nargs, char *next) {
-  if (sp + nargs + 4 >= CALL_STACK_SIZE_END) {
+static inline void call_begin(uint64_t nargs, const char *next) {
+  [[unlikely]] if (sp + nargs + 4 >= CALL_STACK_SIZE_END) {
     throw std::logic_error("call stack overflow");
   }
   for (int i = 0; i < nargs; ++i) {
@@ -432,18 +429,18 @@ void call_begin(uint64_t nargs, char *next) {
   sp += (nargs + 4);
 }
 
-void alloc_locals(uint64_t nlocals) {
+static inline void alloc_locals(uint64_t nlocals) {
   sp += nlocals;
-  if (sp >= CALL_STACK_SIZE_END) {
+  [[unlikely]] if (sp >= CALL_STACK_SIZE_END) {
     throw std::logic_error("call stack overflow");
   }
 }
 
-uint64_t *get_local(uint64_t i) {
+static inline uint64_t *get_local(uint64_t i) {
   return (sp - i - 1);
 }
 
-void print_stacks() {
+static void print_stacks() {
   fprintf(stderr, "\n\nstack:");
   for (uint64_t *i = operand_stack_end - 1; i >= OPERAND_STACK_SIZE_BEGIN; --i) {
     fprintf(stderr, " %li ", *i);
@@ -461,19 +458,19 @@ void print_stacks() {
   fprintf(stderr, "\n\n");
 }
 
-uint64_t *get_arg(uint64_t i) {
+static inline uint64_t *get_arg(uint64_t i) {
   return (fp - i - 1);
 }
 
-uint64_t *get_closure(uint64_t i) {
+static inline uint64_t *get_closure(uint64_t i) {
   if (i >= LEN(TO_DATA((*closure_address))) - 1) {
-    throw std::logic_error("bad access to closure");
+    [[unlikely]] throw std::logic_error("bad access to closure");
   }
   return reinterpret_cast<uint64_t *>(*closure_address) + (i + 1); //  Value.Access i -> I (word_size * (i + 1), r15)
 }
 
-char *call_end() {
-  char *result = reinterpret_cast<char *>(fp[0]);
+static inline const char *call_end() {
+  const char *result = reinterpret_cast<char *>(fp[0]);
   uint64_t *need_sp = reinterpret_cast<uint64_t *>(fp[1]);
   *closure_address = fp[3];
   fp = reinterpret_cast<uint64_t *>(fp[2]);
@@ -485,37 +482,37 @@ char *call_end() {
   return result;
 }
 
-uint64_t make_boxed(uint64_t n) {
+static inline uint64_t make_boxed(uint64_t n) {
   return (n << 1) + 1;
 }
 
-uint64_t make_unboxed(int64_t n) {
+static inline uint64_t make_unboxed(int64_t n) {
   return n >> 1;
 }
 
-void check_unboxed(uint64_t n, const std::string &message) {
-  if (!(n & 1)) {
+static inline void check_unboxed(uint64_t n, const std::string &message) {
+  [[unlikely]] if (!(n & 1)) {
     throw std::logic_error(message);
   }
 }
 
 #define CHECK_ARGS_NUMBER(addr, arg_number) \
         do { if (addr_to_args_number.find(addr) != addr_to_args_number.end()) { \
-          if (addr_to_args_number[addr] != (arg_number)) { \
+          [[unlikely]] if (addr_to_args_number[addr] != (arg_number)) { \
             throw std::logic_error("incorrect args number"); \
           } \
         } else { \
           addr_to_args_number[addr] = (arg_number); \
         } } while(0)
 
-#define CHECK_LOCALS(i) do { if ((i) >= locals) throw std::logic_error("invalid local dereference"); } while(0)
-#define CHECK_ARGS(i) do { if ((i) >= args) throw std::logic_error("invalid arg dereference"); } while(0)
-#define CHECK_GLOBAL(i) do { if ((i) >= globals) throw std::logic_error("invalid global dereference"); } while(0)
-#define CHECK_JMP_ADDR(addr) do { if (addr <= current_addr) { if (addr <= addr_of_function_begin) throw std::logic_error("invalid jump"); } else { addrs_jump_in_function.insert(addr); } } while (0)
-#define CHECK_NUMBER_IS_ADEQUATE(n) do { if (n > 256) throw std::logic_error("inadequate constant"); } while (0)
+#define CHECK_LOCALS(i) do { [[unlikely]] if ((i) >= locals) throw std::logic_error("invalid local dereference"); } while(0)
+#define CHECK_ARGS(i) do { [[unlikely]] if ((i) >= args) throw std::logic_error("invalid arg dereference"); } while(0)
+#define CHECK_GLOBAL(i) do { [[unlikely]] if ((i) >= globals) throw std::logic_error("invalid global dereference"); } while(0)
+#define CHECK_JMP_ADDR(addr) do { if (addr <= current_addr) { [[unlikely]] if (addr <= addr_of_function_begin) throw std::logic_error("invalid jump"); } else { addrs_jump_in_function.insert(addr); } } while (0)
+#define CHECK_NUMBER_IS_ADEQUATE(n) do { [[unlikely]] if (n > 256) throw std::logic_error("inadequate constant"); } while (0)
 
-char *safe_get_ip(char* ip, size_t size) {
-  if (ip + size - 1 > (char *)file + bytefile_size) {
+static inline const char *safe_get_ip(const char* ip, size_t size) {
+  [[unlikely]] if (ip + size - 1 > (char *)file + bytefile_size) {
     throw std::logic_error("file is not finishing");
   }
   return ip;
@@ -526,9 +523,9 @@ char *safe_get_ip(char* ip, size_t size) {
 #define INT (ip += sizeof(int), *(int *)safe_get_ip(ip - sizeof(int), sizeof(int)))
 #define BYTE (ip += 1, *safe_get_ip(ip - 1, 1))
 
-void check_file(FILE *f = stderr)
+static void check_file(FILE *f = stderr)
 {
-  char *ip = file->code_ptr;
+  const char *ip = file->code_ptr;
   
   bool was_begin = false;
   uint64_t globals = file->global_area_size;
@@ -550,22 +547,22 @@ void check_file(FILE *f = stderr)
          l = x & 0x0F;
 
     uint64_t current_addr = ip - file->code_ptr - 1;
-    if (!was_begin && (h != 5 || l != 2 && l != 3) && h != 15) {
+    [[unlikely]] if (!was_begin && (h != 5 || l != 2 && l != 3) && h != 15) {
       throw std::logic_error("should be BEGIN instruction");
     }
     bool is_main_begin = current_addr == main_ptr;
-    if (is_main_begin && (h != 5 || l != 2)) {
+    [[unlikely]] if (is_main_begin && (h != 5 || l != 2)) {
       throw std::logic_error("main should point to BEGIN");
     }
     if (forward_calls.find(current_addr) != forward_calls.end()) {
-      if (h != 5 || l != 2) {
+      [[unlikely]] if (h != 5 || l != 2) {
         throw std::logic_error("CALL must refer to BEGIN");
       } else {
         forward_calls.erase(forward_calls.find(current_addr));
       }
     }
     if (forward_ccalls.find(current_addr) != forward_ccalls.end()) {
-      if (h != 5 || l != 3 && l != 2) {
+      [[unlikely]] if (h != 5 || l != 3 && l != 2) {
         throw std::logic_error("CLOSURE must refer to BEGIN");
       } else {
         forward_ccalls.erase(forward_ccalls.find(current_addr));
@@ -575,16 +572,16 @@ void check_file(FILE *f = stderr)
     switch (h)
     {
     case 15:
-      if (was_begin) {
+      [[unlikely]] if (was_begin) {
         throw std::logic_error("invalid file: <end> before END");
       }
-      if (main_ptr + file->code_ptr >= ip) {
+      [[unlikely]] if (main_ptr + file->code_ptr >= ip) {
         throw std::logic_error("main points outside the code");
       }
-      if (!forward_calls.empty()) {
+      [[unlikely]] if (!forward_calls.empty()) {
         throw std::logic_error("unresolved calls was found");
       }
-      if (!forward_ccalls.empty()) {
+      [[unlikely]] if (!forward_ccalls.empty()) {
         throw std::logic_error("unresolved closures was found");
         // for (auto ccal : forward_ccalls) {
         //   fprintf(stderr, "%lx\n", ccal); //
@@ -594,7 +591,7 @@ void check_file(FILE *f = stderr)
 
     /* BINOP */
     case 0: {
-      if (l < 1 || l > 13) {
+      [[unlikely]] if (l < 1 || l > 13) {
         throw std::logic_error("unknown BINOP");
       }
       break;
@@ -609,18 +606,18 @@ void check_file(FILE *f = stderr)
       }
 
       case 1: { // STRING
-        char *tag = STRING;
+        const char *tag = STRING;
         break;
       }
 
       case 2: { // SEXP
-        char *tag = STRING;
+        const char *tag = STRING;
         uint64_t n = INT;
         CHECK_NUMBER_IS_ADEQUATE(n);
         break;
       }
 
-      case 3:
+      [[unlikely]] case 3:
         throw std::logic_error("STI is temporary prohibited");
 
       case 4: // STA
@@ -635,7 +632,7 @@ void check_file(FILE *f = stderr)
       case 6: // END
         was_begin = false;
         for (auto addr : addrs_jump_in_function) {
-          if (addr > current_addr) {
+          [[unlikely]] if (addr > current_addr) {
             throw std::logic_error("invalid jump");
           }
         }
@@ -661,7 +658,7 @@ void check_file(FILE *f = stderr)
         FAIL;
       }
       break;
-    case 3: // LDA
+    [[unlikely]] case 3: // LDA
       throw std::logic_error("LDA is temporary prohibited");
     case 2: // LD
     case 4: { // ST
@@ -705,7 +702,7 @@ void check_file(FILE *f = stderr)
         uint64_t nlocals = INT;
         was_begin = true;
         CHECK_ARGS_NUMBER(current_addr, nargs);
-        if (is_main_begin && nargs != 2) {
+        [[unlikely]] if (is_main_begin && nargs != 2) {
           throw std::logic_error("should be 2 args in main");
         }
         addr_of_function_begin = current_addr;
@@ -755,7 +752,7 @@ void check_file(FILE *f = stderr)
           }
         };
         if (addr <= current_addr) {
-          if (closure_begin_addrs.find(current_addr) == closure_begin_addrs.end()) {
+          [[unlikely]] if (closure_begin_addrs.find(current_addr) == closure_begin_addrs.end()) {
             throw std::logic_error("CLOSURE must correspond BEGIN");
           }
         } else {
@@ -774,7 +771,7 @@ void check_file(FILE *f = stderr)
         uint64_t arg_number = INT;
         CHECK_ARGS_NUMBER(addr, arg_number);
         if (addr <= current_addr) {
-          if (function_begin_addrs.find(addr) == function_begin_addrs.end()) {
+          [[unlikely]] if (function_begin_addrs.find(addr) == function_begin_addrs.end()) {
             throw std::logic_error("CALL must refer to BEGIN");
           }
         } else {
@@ -784,7 +781,7 @@ void check_file(FILE *f = stderr)
       }
 
       case 7: { // TAG
-        char *tag = STRING;
+        const char *tag = STRING;
         uint64_t n = INT;
         CHECK_NUMBER_IS_ADEQUATE(n);
         break;
@@ -813,7 +810,7 @@ void check_file(FILE *f = stderr)
       break;
 
     case 6: // PATT
-      if (l >= 7) {
+      [[unlikely]] if (l >= 7) {
         throw std::logic_error("unsupported pattern for PATT");
       }
       break;
@@ -859,10 +856,10 @@ stop:
 #define INT (ip += sizeof(int), *(int *)(ip - sizeof(int)))
 #define BYTE *ip++
 
-void run_interpreter()
+static void run_interpreter()
 {
   uint64_t arg_numbers_checker = 2;
-  char *ip = main_ptr + file->code_ptr;
+  const char *ip = main_ptr + file->code_ptr;
   __gc_init();
   __gc_stack_bottom = reinterpret_cast<size_t>(memory_to_simulation + sizeof(memory_to_simulation) / sizeof(memory_to_simulation[0]) - sizeof(void *));
   __gc_stack_top = (reinterpret_cast<size_t>(memory_to_simulation) + ALIGNMENT_FEATURE - sizeof(void *)) & (~0xFull);
@@ -1060,7 +1057,7 @@ void run_interpreter()
       case 2: { // BEGIN
         uint64_t nargs = INT;
         uint64_t nlocals = INT;
-        if (nargs != arg_numbers_checker) {
+        [[unlikely]] if (nargs != arg_numbers_checker) {
           throw std::logic_error("incorrect argument number");
         }
         alloc_locals(nlocals);
@@ -1070,7 +1067,7 @@ void run_interpreter()
       case 3: { // CBEGIN
         uint64_t nargs = INT;
         uint64_t nlocals = INT;
-        if (nargs != arg_numbers_checker) {
+        [[unlikely]] if (nargs != arg_numbers_checker) {
           throw std::logic_error("incorrect argument number");
         }
         alloc_locals(nlocals);
@@ -1118,7 +1115,7 @@ void run_interpreter()
         uint64_t args_number = INT;
         call_begin(args_number, ip);
         *closure_address = pop_operand();
-        if (!Bclosure_tag_patt(reinterpret_cast<void *>(*closure_address))) {
+        [[unlikely]] if (!Bclosure_tag_patt(reinterpret_cast<void *>(*closure_address))) {
           throw std::logic_error("closure expected");
         }
         arg_numbers_checker = args_number;
@@ -1158,7 +1155,7 @@ void run_interpreter()
         uint64_t column = INT;
         uint64_t data = pop_operand();
         push_operand(data);
-        Bmatch_failure(reinterpret_cast<void *>(data), file_name, line, column);
+        Bmatch_failure(reinterpret_cast<void *>(data), const_cast<char *>(file_name), line, column);
         break;
       }
 
@@ -1243,7 +1240,7 @@ void run_interpreter()
   __shutdown();
 }
 
-void find_main()
+static void find_main()
 {
   bool found = false;
   for (int i = 0; i < file->public_symbols_number; i++) {
@@ -1255,20 +1252,20 @@ void find_main()
       break;
     }
   }
-  if (!found) {
+  [[unlikely]] if (!found) {
     throw std::logic_error("file doesn't contain main function");
   }
 }
 
 int main(int argc, char *argv[])
 {
-  if (argc != 2) {
+  [[unlikely]] if (argc != 2) {
     fprintf(stderr, "Error: should be 1 argument *.bc file!\n");
     std::exit(1);
   }
   file_name = argv[1];
   try {
-    bytefile *f = read_file(file_name);
+    const bytefile *f = read_file(file_name);
     file = f;
     find_main();
     check_file();
