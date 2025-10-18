@@ -150,7 +150,7 @@ static const bytefile *read_file(const char *fname)
 #define STRING get_string(file, INT)
 #define FAIL failure("ERROR: invalid opcode %d-%d\n", h, l)
 
-static void print_code(char *ip, FILE *f = stderr)
+static void print_code(const char *ip, FILE *f = stderr)
 {
   const char *ops[] = {"+", "-", "*", "/", "%", "<", "<=", ">", ">=", "==", "!=", "&&", "!!"};
   const char *pats[] = {"=str", "#string", "#array", "#sexp", "#ref", "#val", "#fun"};
@@ -397,13 +397,13 @@ static uint64_t main_addr;
 static uint64_t nargs_in_current_function = 2;
 static uint64_t nlocals_in_current_function = 0;
 static uint64_t nglobals;
-constexpr uint64_t NUTIL_VALUES = 3;
+constexpr uint64_t NUTIL_VALUES = 4;
 
 
 static inline void move_globals(uint64_t number_of_globals) {
   nglobals = number_of_globals;
   CALL_STACK_BEGIN += nglobals;
-  sp += nglobals;
+  sp += nglobals * sizeof(uint64_t);
 }
 
 static inline uint64_t *get_global(uint64_t i) {
@@ -414,7 +414,7 @@ static inline uint64_t pop_operand() {
   [[unlikely]] if (reinterpret_cast<uint64_t *>(operand_stack_end) == OPERAND_STACK_BEGIN_INCL) {
     throw std::logic_error("op stack underflow");
   }
-  ++operand_stack_end;
+  operand_stack_end += sizeof(uint64_t);
   uint64_t result = *reinterpret_cast<uint64_t *>(operand_stack_end);
   return result;
 }
@@ -423,16 +423,17 @@ static inline void push_operand(uint64_t operand) {
   [[unlikely]] if (reinterpret_cast<uint64_t *>(operand_stack_end) < OPERAND_STACK_END_INCL) {
     throw std::logic_error("op stack overflow");
   }
+  //fprintf(stderr, "---%lx %lx\n", operand_stack_end, OPERAND_STACK_BEGIN_INCL);//
   *reinterpret_cast<uint64_t *>(operand_stack_end) = operand;
-  --operand_stack_end; 
+  operand_stack_end -= sizeof(uint64_t); 
 }
 
 static inline void main_begin() {
-  sp += (nargs_in_current_function + NUTIL_VALUES);
+  sp += (nargs_in_current_function + NUTIL_VALUES) * sizeof(uint64_t);
 }
 
 static inline void call_begin(uint64_t nargs, const char *next) {
-  [[unlikely]] if (reinterpret_cast<uint64_t *>(sp) + nargs + 4 >= CALL_STACK_END) {
+  [[unlikely]] if (reinterpret_cast<uint64_t *>(sp) + nargs + NUTIL_VALUES >= CALL_STACK_END) {
     throw std::logic_error("call stack overflow");
   }
   for (int i = 0; i < nargs; ++i) {
@@ -443,25 +444,27 @@ static inline void call_begin(uint64_t nargs, const char *next) {
   reinterpret_cast<uint64_t *>(sp)[nargs + 2] = nlocals_in_current_function;
   reinterpret_cast<uint64_t *>(sp)[nargs + 3] = *CLOSURE_ADDRESS;
   *CLOSURE_ADDRESS = 0;
-  sp += (nargs + 4);
+  sp += (nargs + NUTIL_VALUES) * sizeof(uint64_t);
   nargs_in_current_function = nargs;
 }
 
 static inline void alloc_locals(uint64_t nlocals) {
-  sp += nlocals;
+  sp += nlocals * sizeof(uint64_t);
   [[unlikely]] if (reinterpret_cast<uint64_t *>(sp) >= CALL_STACK_END) {
     throw std::logic_error("call stack overflow");
   }
+  nlocals_in_current_function = nlocals;
+  ///fprintf(stderr, "nl: %lu na: %lu ng: %lu\n", nlocals_in_current_function, nargs_in_current_function, nglobals);///
 }
 
 static inline uint64_t *get_local(uint64_t i) {
-  return reinterpret_cast<uint64_t *>(sp - i - 1);
+  return reinterpret_cast<uint64_t *>(sp - (i + 1) * sizeof(uint64_t));
 }
 
 #ifndef NDEBUG // for debug only
 static void print_stacks() {
   fprintf(stderr, "\n\nstack:");
-  for (uint64_t *i = reinterpret_cast<uint64_t *>(operand_stack_end) - 1; i <= OPERAND_STACK_BEGIN_INCL; ++i) {
+  for (uint64_t *i = reinterpret_cast<uint64_t *>(operand_stack_end) + 1; i <= OPERAND_STACK_BEGIN_INCL; ++i) {
     fprintf(stderr, " %li ", *i);
   }
   fprintf(stderr, "\n\nglobals:");
@@ -479,7 +482,7 @@ static void print_stacks() {
 #endif
 
 static inline uint64_t *get_arg(uint64_t i) {
-  return reinterpret_cast<uint64_t *>(sp - nlocals_in_current_function - NUTIL_VALUES - i - 1);
+  return (reinterpret_cast<uint64_t *>(sp) - nlocals_in_current_function - NUTIL_VALUES - i - 1);
 }
 
 static inline uint64_t *get_closure(uint64_t i) {
@@ -490,13 +493,14 @@ static inline uint64_t *get_closure(uint64_t i) {
 }
 
 static inline const char *call_end() {
-  const char *result = reinterpret_cast<char *>(sp - nlocals_in_current_function - NUTIL_VALUES - 1);
-  uint64_t nargs = *reinterpret_cast<uint64_t *>(sp - nlocals_in_current_function - 3);
-  uint64_t nlocals = *reinterpret_cast<uint64_t *>(sp - nlocals_in_current_function - 2);
-  *CLOSURE_ADDRESS = *reinterpret_cast<uint64_t *>(sp - nlocals_in_current_function - 1);
-  sp -= (nlocals_in_current_function + nargs_in_current_function + NUTIL_VALUES);
+  const char *result = reinterpret_cast<char *>(*(reinterpret_cast<uint64_t *>(sp) - nlocals_in_current_function - 4));
+  uint64_t nargs = *(reinterpret_cast<uint64_t *>(sp) - nlocals_in_current_function - 3);
+  uint64_t nlocals = *(reinterpret_cast<uint64_t *>(sp) - nlocals_in_current_function - 2);
+  *CLOSURE_ADDRESS = *(reinterpret_cast<uint64_t *>(sp) - nlocals_in_current_function - 1);
+  sp -= (nlocals_in_current_function + nargs_in_current_function + NUTIL_VALUES) * sizeof(uint64_t);
   nlocals_in_current_function = nlocals;
   nargs_in_current_function = nargs;
+  //fprintf(stderr, "nl: %lu na: %lu ng: %lu\n", nlocals_in_current_function, nargs_in_current_function, nglobals);///
   return result;
 }
 
@@ -876,14 +880,15 @@ static void run_interpreter()
   __gc_stack_bottom = reinterpret_cast<size_t>(CALL_STACK_BEGIN);
   __gc_stack_top = reinterpret_cast<size_t>(OPERAND_STACK_BEGIN_INCL);
   move_globals(file->global_area_size);
+  main_begin();
   do
   {
-    // print_code(ip, file);
+    //print_code(ip);///
     char x = BYTE,
          h = (x & 0xF0) >> 4,
          l = x & 0x0F;
-    // dump_heap();
-    // print_stacks();
+    // dump_heap();///
+    //print_stacks();///
 
     switch (h)
     {
@@ -1246,6 +1251,7 @@ static void run_interpreter()
     }
     break;
     }
+    //fprintf(stderr, "\n%lx\n", ip); ///
   } while (ip != nullptr);
   __shutdown();
 }
