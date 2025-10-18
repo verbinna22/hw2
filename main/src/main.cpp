@@ -563,6 +563,7 @@ static inline const char *safe_get_ip(const char* ip, size_t size) {
 
 static void run_interpreter()
 {
+  bool expected_begin = true;
   const char *ip = main_addr + file->code_ptr;
   __gc_init();
   __gc_stack_bottom = reinterpret_cast<size_t>(CALL_STACK_BEGIN);
@@ -577,7 +578,9 @@ static void run_interpreter()
          l = x & 0x0F;
     // dump_heap();///
     //print_stacks();///
-
+    if (expected_begin && (h != 5 || l != 2 && l != 3)) {
+      throw std::logic_error("BEGIN or CBEGIN was expected");
+    }
     switch (h)
     {
     /* BINOP  must be valid*/
@@ -678,7 +681,7 @@ static void run_interpreter()
         push_operand(value);
         break;
       }
-// TODO: begin after call
+
       case 10: { // SWAP
         uint64_t first = pop_operand();
         uint64_t second = pop_operand();
@@ -767,6 +770,10 @@ static void run_interpreter()
       case 2: { // BEGIN
         uint64_t nargs = INT;
         uint64_t nlocals = INT;
+        [[unlikely]] if (!expected_begin) {
+          throw std::logic_error("BEGIN was not expected");
+        }
+        expected_begin = false;
         [[unlikely]] if (nargs != nargs_in_current_function) {
           throw std::logic_error("incorrect argument number");
         }
@@ -777,6 +784,10 @@ static void run_interpreter()
       case 3: { // CBEGIN
         uint64_t nargs = INT;
         uint64_t nlocals = INT;
+        [[unlikely]] if (!expected_begin) {
+          throw std::logic_error("CBEGIN was not expected");
+        }
+        expected_begin = false;
         [[unlikely]] if (nargs != nargs_in_current_function) {
           throw std::logic_error("incorrect argument number");
         }
@@ -828,6 +839,7 @@ static void run_interpreter()
 // TODO: remove unused imports + format
       case 5: { // CALLC
         uint64_t args_number = INT;
+        expected_begin = true;
         call_begin(args_number, ip);
         *CLOSURE_ADDRESS = pop_operand();
         [[unlikely]] if (!Bclosure_tag_patt(reinterpret_cast<void *>(*CLOSURE_ADDRESS))) {
@@ -840,6 +852,7 @@ static void run_interpreter()
       case 6: { // CALL
         uint64_t addr = INT;
         uint64_t args_number = INT;
+        expected_begin = true;
         call_begin(args_number, ip);
         ip = addr + file->code_ptr;
         break;
